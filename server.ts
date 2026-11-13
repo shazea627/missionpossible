@@ -485,6 +485,282 @@ app.post('/api/onemap/travel-times', async (req, res) => {
   });
 });
 
+function decodePolyline(encoded: string): [number, number][] {
+  if (!encoded) return [];
+  const points: [number, number][] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let b = 0;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20 && index < encoded.length);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20 && index < encoded.length);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
+function toOneMapDateParam(isoDate?: string): string {
+  if (isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+    const [yyyy, mm, dd] = isoDate.split('-');
+    return `${mm}-${dd}-${yyyy}`;
+  }
+  const sgNow = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Singapore',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const [yyyy, mm, dd] = sgNow.split('-');
+  return `${mm}-${dd}-${yyyy}`;
+}
+
+interface RouteInstructionItem {
+  step: string;
+  distanceText?: string;
+  mode?: string;
+}
+
+app.post('/api/onemap/route', async (req, res) => {
+  const {
+    startLat,
+    startLng,
+    endLat,
+    endLng,
+    mode = 'pt',
+    isoDate,
+    startTime24 = '09:00',
+  } = req.body as {
+    startLat: number;
+    startLng: number;
+    endLat: number;
+    endLng: number;
+    mode?: 'pt' | 'drive' | 'walk' | 'cycle';
+    isoDate?: string;
+    startTime24?: string;
+  };
+
+  if (
+    typeof startLat !== 'number' ||
+    typeof startLng !== 'number' ||
+    typeof endLat !== 'number' ||
+    typeof endLng !== 'number'
+  ) {
+    return res.status(400).json({ error: 'Valid start and end coordinates are required.' });
+  }
+
+  const straightLineKm = haversineKm(startLat, startLng, endLat, endLng);
+  const dateParam = toOneMapDateParam(isoDate);
+  const timeParam = /^\d{2}:\d{2}$/.test(startTime24) ? `${startTime24}:00` : '09:00:00';
+  const cacheKey = `detailed:${startLat.toFixed(4)},${startLng.toFixed(4)}->${endLat.toFixed(
+    4
+  )},${endLng.toFixed(4)}:${mode}:${dateParam}:${timeParam}`;
+
+  const cached = routeCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return res.json(cached.data);
+  }
+
+  const token = await getOneMapToken();
+  if (!token) {
+    return res.json({
+      source: 'unavailable',
+      mode,
+      minutes: null,
+      distanceKm: straightLineKm,
+      instructions: [],
+      polyline: [],
+      reason:
+        'OneMap server credentials (ONEMAP_EMAIL / ONEMAP_PASSWORD) are not configured; route directions and live travel time are unavailable.',
+    });
+  }
+
+  try {
+    const params = new URLSearchParams({
+      start: `${startLat},${startLng}`,
+      end: `${endLat},${endLng}`,
+      routeType: mode,
+    });
+    if (mode === 'pt') {
+      params.set('date', dateParam);
+      params.set('time', timeParam);
+      params.set('mode', 'TRANSIT');
+      params.set('numItineraries', '1');
+    }
+
+    const routeRes = await fetchWithTimeout(
+      `https://www.onemap.gov.sg/api/public/routingsvc/route?${params.toString()}`,
+      { headers: { Authorization: token } },
+      6500
+    );
+
+    if (routeRes.status === 429) {
+      return res.json({
+        source: 'unavailable',
+        rateLimited: true,
+        mode,
+        minutes: null,
+        distanceKm: straightLineKm,
+        instructions: [],
+        polyline: [],
+        reason: 'OneMap routing API rate limit reached; live directions temporarily unavailable.',
+      });
+    }
+
+    if (routeRes.ok) {
+      const payload = (await routeRes.json()) as {
+        status?: number;
+        status_message?: string;
+        route_summary?: { total_time?: number; total_distance?: number };
+        route_instructions?: Array<[string, string, number, string, number, string, ...unknown[]]>;
+        route_geometry?: string;
+        plan?: {
+          itineraries?: Array<{
+            duration?: number;
+            walkDistance?: number;
+            legs?: Array<{
+              mode?: string;
+              distance?: number;
+              duration?: number;
+              route?: string;
+              routeShortName?: string;
+              from?: { name?: string };
+              to?: { name?: string };
+              legGeometry?: { points?: string };
+            }>;
+          }>;
+        };
+      };
+
+      if (mode === 'pt' && payload.plan?.itineraries?.[0]) {
+        const itin = payload.plan.itineraries[0];
+        const durationSec = Number(itin.duration ?? 0);
+        const legs = Array.isArray(itin.legs) ? itin.legs : [];
+        const totalMeters = legs.reduce((sum, leg) => sum + Number(leg.distance ?? 0), 0);
+        const polyline: [number, number][] = [];
+        const instructions: RouteInstructionItem[] = [];
+
+        for (const leg of legs) {
+          if (leg.legGeometry?.points) {
+            polyline.push(...decodePolyline(leg.legGeometry.points));
+          }
+          const legMode = (leg.mode ?? 'TRANSIT').toUpperCase();
+          const fromName = leg.from?.name || 'Origin';
+          const toName = leg.to?.name || 'Stop';
+          const legMins = leg.duration ? Math.max(1, Math.round(leg.duration / 60)) : null;
+          const distLabel =
+            typeof leg.distance === 'number' && leg.distance > 0
+              ? leg.distance >= 1000
+                ? `${(leg.distance / 1000).toFixed(1)} km`
+                : `${Math.round(leg.distance)} m`
+              : undefined;
+          const serviceName = leg.routeShortName || leg.route;
+
+          if (legMode === 'WALK') {
+            instructions.push({
+              step: `Walk from ${fromName} to ${toName}${legMins ? ` (~${legMins} min)` : ''}`,
+              distanceText: distLabel,
+              mode: 'WALK',
+            });
+          } else {
+            instructions.push({
+              step: `Take ${legMode}${serviceName ? ` (${serviceName})` : ''} from ${fromName} to ${toName}${
+                legMins ? ` (~${legMins} min)` : ''
+              }`,
+              distanceText: distLabel,
+              mode: legMode,
+            });
+          }
+        }
+
+        if (durationSec > 0) {
+          const resultPayload = {
+            source: 'live' as const,
+            mode,
+            minutes: Math.max(1, Math.round(durationSec / 60)),
+            distanceKm:
+              totalMeters > 0 ? Math.round((totalMeters / 1000) * 10) / 10 : straightLineKm,
+            instructions,
+            polyline,
+            transitSummary: `${legs.filter((l) => l.mode !== 'WALK').length} transit leg(s)`,
+          };
+          routeCache.set(cacheKey, { data: resultPayload, expiresAt: Date.now() + 15 * 60 * 1000 });
+          return res.json(resultPayload);
+        }
+      }
+
+      if (payload.route_summary?.total_time && payload.route_summary.total_time > 0) {
+        const totalSeconds = payload.route_summary.total_time;
+        const totalMeters = payload.route_summary.total_distance;
+        const rawInstructions = Array.isArray(payload.route_instructions)
+          ? payload.route_instructions
+          : [];
+        const instructions: RouteInstructionItem[] = rawInstructions.slice(0, 14).map((row) => {
+          const dir = String(row[0] ?? 'Continue');
+          const road = String(row[1] ?? '').trim();
+          const meters = Number(row[2] ?? 0);
+          const distText =
+            meters > 0
+              ? meters >= 1000
+                ? `${(meters / 1000).toFixed(1)} km`
+                : `${Math.round(meters)} m`
+              : undefined;
+          return {
+            step: road && road !== '-' ? `${dir} onto ${road}` : dir,
+            distanceText: distText,
+            mode: mode.toUpperCase(),
+          };
+        });
+        const polyline = payload.route_geometry ? decodePolyline(payload.route_geometry) : [];
+        const resultPayload = {
+          source: 'live' as const,
+          mode,
+          minutes: Math.max(1, Math.round(totalSeconds / 60)),
+          distanceKm:
+            typeof totalMeters === 'number'
+              ? Math.round((totalMeters / 1000) * 10) / 10
+              : straightLineKm,
+          instructions,
+          polyline,
+        };
+        routeCache.set(cacheKey, { data: resultPayload, expiresAt: Date.now() + 15 * 60 * 1000 });
+        return res.json(resultPayload);
+      }
+    }
+  } catch {
+    // Fall through cleanly without inventing directions
+  }
+
+  return res.json({
+    source: 'unavailable',
+    mode,
+    minutes: null,
+    distanceKm: straightLineKm,
+    instructions: [],
+    polyline: [],
+    reason: `OneMap could not return a ${mode.toUpperCase()} route between these points; straight-line distance shown without invented directions.`,
+  });
+});
+
 // --- 4. data.gov.sg Public Holidays Proxy ---
 const DEMO_SG_HOLIDAYS = [
   { date: '2026-11-08', day: 'Sunday', holiday: 'Deepavali' },

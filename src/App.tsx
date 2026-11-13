@@ -7,12 +7,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CharityDashboard } from './components/CharityDashboard';
 import { CorporateDashboard } from './components/CorporateDashboard';
 import { DemoPresentationView } from './components/DemoPresentationView';
-import { DEMO_STAGES, DemoToolbar } from './components/DemoToolbar';
+import {
+  DEMO_STAGES,
+  DemoSequenceType,
+  DemoToolbar,
+  VOLUNTEER_JOURNEY_STAGES,
+} from './components/DemoToolbar';
 import { HomeView } from './components/HomeView';
 import { Navbar } from './components/Navbar';
 import { PricingView } from './components/PricingView';
 import { Toast, ToastMessage } from './components/Toast';
 import { VolunteerDashboard } from './components/VolunteerDashboard';
+import { WhatsAppReminderModal } from './components/WhatsAppReminderModal';
 import {
   INITIAL_BOOKINGS,
   INITIAL_CHARITIES,
@@ -22,37 +28,123 @@ import {
 } from './data/mockData';
 import {
   AttendanceStatus,
+  AvailabilityOverride,
   CorporateCampaign,
   CorporateOrg,
+  NotificationLogEntry,
+  NotificationPreferences,
   Opportunity,
   PageView,
   PublicHoliday,
   ShiftBooking,
   ShiftInvitation,
   VolunteerProfile,
+  VolunteerSubTab,
   WeatherApiState,
 } from './types';
+import {
+  createNotificationLogEntry,
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  WhatsAppReminderPayload,
+} from './utils/notifications';
+import { getSingaporeNowTimeLabel } from './utils/time';
+
+const STORAGE_KEY = 'missionpossible_demo_state_v1';
 
 const PAGE_TITLES: Record<PageView, string> = {
   home: 'MissionPossible — The right volunteer. The right cause. The right time.',
   volunteers: 'Volunteer Portal — MissionPossible',
+  calendar: 'My Calendar — MissionPossible',
   charities: 'Charity Workspace — MissionPossible',
   corporate: 'Corporate CSR Portal — MissionPossible',
   pricing: 'Pricing & Plans — MissionPossible',
   demo: 'Demo Mode & Pitch Deck — MissionPossible',
 };
 
+interface PersistedState {
+  volunteers: VolunteerProfile[];
+  activeVolunteerId: string;
+  opportunities: Opportunity[];
+  bookings: ShiftBooking[];
+  invitations: ShiftInvitation[];
+  corporates: CorporateOrg[];
+  availabilityOverrides: Record<string, AvailabilityOverride>;
+  notificationPreferences: NotificationPreferences;
+  notificationLog: NotificationLogEntry[];
+}
+
+function loadPersistedState(): PersistedState | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedState>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      volunteers: Array.isArray(parsed.volunteers) ? parsed.volunteers : VOLUNTEER_POOL,
+      activeVolunteerId:
+        typeof parsed.activeVolunteerId === 'string' ? parsed.activeVolunteerId : 'vol-01',
+      opportunities: Array.isArray(parsed.opportunities)
+        ? parsed.opportunities
+        : INITIAL_OPPORTUNITIES,
+      bookings: Array.isArray(parsed.bookings) ? parsed.bookings : INITIAL_BOOKINGS,
+      invitations: Array.isArray(parsed.invitations) ? parsed.invitations : [],
+      corporates: Array.isArray(parsed.corporates) ? parsed.corporates : INITIAL_CORPORATE_ORGS,
+      availabilityOverrides:
+        parsed.availabilityOverrides && typeof parsed.availabilityOverrides === 'object'
+          ? parsed.availabilityOverrides
+          : {},
+      notificationPreferences:
+        parsed.notificationPreferences && typeof parsed.notificationPreferences === 'object'
+          ? { ...DEFAULT_NOTIFICATION_PREFERENCES, ...parsed.notificationPreferences }
+          : DEFAULT_NOTIFICATION_PREFERENCES,
+      notificationLog: Array.isArray(parsed.notificationLog) ? parsed.notificationLog : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
+  const initialPersisted = useMemo(() => loadPersistedState(), []);
+
   const [currentPage, setCurrentPage] = useState<PageView>('home');
+  const [activeVolunteerTab, setActiveVolunteerTab] = useState<VolunteerSubTab>('discover');
+  const [routePlannerOppId, setRoutePlannerOppId] = useState<string | null>(null);
+  const [activeReminderModal, setActiveReminderModal] = useState<WhatsAppReminderPayload | null>(
+    null
+  );
+
   const [demoActive, setDemoActive] = useState(false);
+  const [demoSequence, setDemoSequence] = useState<DemoSequenceType>('volunteer-journey');
   const [demoStage, setDemoStage] = useState(1);
 
-  const [volunteers, setVolunteers] = useState<VolunteerProfile[]>(VOLUNTEER_POOL);
-  const [activeVolunteerId, setActiveVolunteerId] = useState<string>('vol-01');
-  const [opportunities, setOpportunities] = useState<Opportunity[]>(INITIAL_OPPORTUNITIES);
-  const [bookings, setBookings] = useState<ShiftBooking[]>(INITIAL_BOOKINGS);
-  const [invitations, setInvitations] = useState<ShiftInvitation[]>([]);
-  const [corporates, setCorporates] = useState<CorporateOrg[]>(INITIAL_CORPORATE_ORGS);
+  const [volunteers, setVolunteers] = useState<VolunteerProfile[]>(
+    () => initialPersisted?.volunteers ?? VOLUNTEER_POOL
+  );
+  const [activeVolunteerId, setActiveVolunteerId] = useState<string>(
+    () => initialPersisted?.activeVolunteerId ?? 'vol-01'
+  );
+  const [opportunities, setOpportunities] = useState<Opportunity[]>(
+    () => initialPersisted?.opportunities ?? INITIAL_OPPORTUNITIES
+  );
+  const [bookings, setBookings] = useState<ShiftBooking[]>(
+    () => initialPersisted?.bookings ?? INITIAL_BOOKINGS
+  );
+  const [invitations, setInvitations] = useState<ShiftInvitation[]>(
+    () => initialPersisted?.invitations ?? []
+  );
+  const [corporates, setCorporates] = useState<CorporateOrg[]>(
+    () => initialPersisted?.corporates ?? INITIAL_CORPORATE_ORGS
+  );
+  const [availabilityOverrides, setAvailabilityOverrides] = useState<
+    Record<string, AvailabilityOverride>
+  >(() => initialPersisted?.availabilityOverrides ?? {});
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(
+    () => initialPersisted?.notificationPreferences ?? DEFAULT_NOTIFICATION_PREFERENCES
+  );
+  const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>(
+    () => initialPersisted?.notificationLog ?? []
+  );
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Singapore API integration states
@@ -77,6 +169,35 @@ export default function App() {
   useEffect(() => {
     document.title = PAGE_TITLES[currentPage];
   }, [currentPage]);
+
+  useEffect(() => {
+    try {
+      const payload: PersistedState = {
+        volunteers,
+        activeVolunteerId,
+        opportunities,
+        bookings,
+        invitations,
+        corporates,
+        availabilityOverrides,
+        notificationPreferences,
+        notificationLog: notificationLog.slice(0, 40),
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage quota errors gracefully
+    }
+  }, [
+    volunteers,
+    activeVolunteerId,
+    opportunities,
+    bookings,
+    invitations,
+    corporates,
+    availabilityOverrides,
+    notificationPreferences,
+    notificationLog,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -154,28 +275,97 @@ export default function App() {
     []
   );
 
-  const handleSetDemoStage = (stageNum: number) => {
-    const clamped = Math.max(1, Math.min(DEMO_STAGES.length, stageNum));
-    setDemoActive(true);
-    setDemoStage(clamped);
-    const info = DEMO_STAGES[clamped - 1];
-    if (clamped === 1 || clamped === 2) {
-      setActiveVolunteerId('vol-01');
+  const handleNavigate = useCallback((page: PageView) => {
+    setCurrentPage(page);
+    if (page === 'calendar') {
+      setActiveVolunteerTab('calendar');
+    } else if (page === 'volunteers') {
+      setActiveVolunteerTab((prev) => (prev === 'calendar' ? 'discover' : prev));
     }
-    setCurrentPage(info.targetPage);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  }, []);
 
-  const handleLaunchDemo = (stage = 1) => {
-    handleSetDemoStage(stage);
-    notify(
-      'Guided Demo Mode Launched',
-      'Walk through Stages 1–5 using the top presentation toolbar.'
-    );
-  };
+  const handleSelectVolunteerSubTab = useCallback((tab: VolunteerSubTab) => {
+    setActiveVolunteerTab(tab);
+    setCurrentPage(tab === 'calendar' ? 'calendar' : 'volunteers');
+  }, []);
+
+  const handleOpenRoutePlanner = useCallback((oppId: string) => {
+    setRoutePlannerOppId(oppId);
+    setActiveVolunteerTab('route-planner');
+    setCurrentPage('volunteers');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleSetDemoStage = useCallback(
+    (stageNum: number, seqOverride?: DemoSequenceType) => {
+      const targetSeq = seqOverride ?? demoSequence;
+      const stages =
+        targetSeq === 'volunteer-journey' ? VOLUNTEER_JOURNEY_STAGES : DEMO_STAGES;
+      const clamped = Math.max(1, Math.min(stages.length, stageNum));
+      const info = stages[clamped - 1];
+
+      setDemoActive(true);
+      setDemoSequence(targetSeq);
+      setDemoStage(clamped);
+
+      if (targetSeq === 'volunteer-journey') {
+        if (clamped <= 5) {
+          setActiveVolunteerId('vol-01');
+        }
+        if (clamped === 4) {
+          setRoutePlannerOppId('opp-02');
+        }
+      } else if (clamped === 1 || clamped === 2) {
+        setActiveVolunteerId('vol-01');
+      }
+
+      if (info.targetSubTab) {
+        setActiveVolunteerTab(info.targetSubTab);
+      }
+      setCurrentPage(info.targetPage);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [demoSequence]
+  );
+
+  const handleChangeDemoSequence = useCallback(
+    (seq: DemoSequenceType) => {
+      handleSetDemoStage(1, seq);
+    },
+    [handleSetDemoStage]
+  );
+
+  const handleLaunchDemo = useCallback(
+    (stage = 1, seq: DemoSequenceType = 'volunteer-journey') => {
+      handleSetDemoStage(stage, seq);
+      notify(
+        seq === 'volunteer-journey'
+          ? '6-Step Volunteer Journey Launched'
+          : '5-Stage Charity Rescue Pitch Launched',
+        'Use Previous Step / Next Step in the top presentation toolbar.'
+      );
+    },
+    [handleSetDemoStage, notify]
+  );
 
   const handleUpdateVolunteer = (updated: VolunteerProfile) => {
     setVolunteers((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
+  };
+
+  const handleUpdateAvailabilityOverride = (
+    date: string,
+    override: AvailabilityOverride | null
+  ) => {
+    setAvailabilityOverrides((prev) => {
+      const next = { ...prev };
+      if (!override) {
+        delete next[date];
+      } else {
+        next[date] = override;
+      }
+      return next;
+    });
   };
 
   const handleBookShift = (opportunityId: string) => {
@@ -200,7 +390,7 @@ export default function App() {
       volunteerName: activeVolunteer.name,
       singpassVerified: activeVolunteer.singpassVerified,
       volunteerSkills: activeVolunteer.skills,
-      bookedAt: '12 Nov 2026',
+      bookedAt: getSingaporeNowTimeLabel(),
       status,
       hoursCredited: 0,
     };
@@ -210,6 +400,22 @@ export default function App() {
       setOpportunities((prev) =>
         prev.map((o) => (o.id === opportunityId ? { ...o, spotsFilled: o.spotsFilled + 1 } : o))
       );
+    }
+
+    if (notificationPreferences.inAppEnabled) {
+      setNotificationLog((prev) => [
+        createNotificationLogEntry({
+          channel: 'In-App',
+          title:
+            status === 'Confirmed'
+              ? `Shift confirmed: ${opp.title}`
+              : `Waitlisted: ${opp.title}`,
+          summary: `${opp.dateLabel} · ${opp.timeLabel} at ${opp.location} (S${opp.postalCode})`,
+          opportunityId: opp.id,
+          status: 'Delivered in App',
+        }),
+        ...prev,
+      ]);
     }
 
     notify(
@@ -224,6 +430,7 @@ export default function App() {
     const target = bookings.find((b) => b.id === bookingId);
     if (!target) return;
 
+    const opp = opportunities.find((o) => o.id === target.opportunityId);
     const wasConfirmed = target.status === 'Confirmed';
 
     setBookings((prev) => {
@@ -262,6 +469,19 @@ export default function App() {
       }
     }
 
+    if (notificationPreferences.cancellationAlertsEnabled && opp) {
+      setNotificationLog((prev) => [
+        createNotificationLogEntry({
+          channel: 'Charity Alert',
+          title: `Cancellation alert: ${target.volunteerName}`,
+          summary: `Withdrew from ${opp.title} (${opp.dateLabel}). Charity coordinator alerted for Rescue a Shift.`,
+          opportunityId: opp.id,
+          status: 'Delivered in App',
+        }),
+        ...prev,
+      ]);
+    }
+
     notify(
       'Registration cancelled',
       'Shift vacancy updated and flagged as needing a replacement.',
@@ -274,6 +494,7 @@ export default function App() {
       (b) => b.opportunityId === opportunityId && b.status === 'Confirmed'
     );
     if (!confirmedForOpp) return;
+    const opp = opportunities.find((o) => o.id === opportunityId);
 
     setBookings((prev) =>
       prev.map((b) =>
@@ -291,6 +512,19 @@ export default function App() {
           : o
       )
     );
+
+    if (notificationPreferences.cancellationAlertsEnabled && opp) {
+      setNotificationLog((prev) => [
+        createNotificationLogEntry({
+          channel: 'Charity Alert',
+          title: `Volunteer cancellation: ${confirmedForOpp.volunteerName}`,
+          summary: `${opp.title} dropped by 1 confirmed volunteer and needs replacement.`,
+          opportunityId: opp.id,
+          status: 'Delivered in App',
+        }),
+        ...prev,
+      ]);
+    }
 
     notify(
       `Shift vacancy alert: ${confirmedForOpp.volunteerName} cancelled`,
@@ -326,6 +560,19 @@ export default function App() {
         (i) => !(i.opportunityId === opportunityId && i.volunteerId === candidate.id)
       ),
     ]);
+
+    if (notificationPreferences.lastMinuteAlertsEnabled) {
+      setNotificationLog((prev) => [
+        createNotificationLogEntry({
+          channel: 'WhatsApp (Simulated)',
+          title: `Rescue alert queued for ${candidate.name}`,
+          summary: `${opp.title} (${matchScore}% match) invitation delivered.`,
+          opportunityId: opp.id,
+          status: 'Simulated',
+        }),
+        ...prev,
+      ]);
+    }
 
     notify(
       `Rescue invitation sent to ${candidate.name}`,
@@ -380,6 +627,69 @@ export default function App() {
     } else {
       notify('Invitation declined', 'Charity coordinator can invite the next matched volunteer.', 'info');
     }
+  };
+
+  const handleSimulateReminder = (payload: WhatsAppReminderPayload) => {
+    setNotificationLog((prev) => [
+      createNotificationLogEntry({
+        channel: 'WhatsApp (Simulated)',
+        title: `Simulated reminder · ${payload.opportunity.title}`,
+        summary: `${payload.offsetLabel} · ${payload.suggestedDepartureLabel}`,
+        opportunityId: payload.opportunity.id,
+        status: 'Simulated',
+      }),
+      ...prev,
+    ]);
+    setActiveReminderModal(payload);
+  };
+
+  const handleConfirmAttendanceByBookingId = (bookingId: string) => {
+    const target = bookings.find((b) => b.id === bookingId);
+    if (!target) return;
+    const opp = opportunities.find((o) => o.id === target.opportunityId);
+    const confirmedAt = getSingaporeNowTimeLabel();
+
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? { ...b, attendanceConfirmed: true, attendanceConfirmedAt: confirmedAt }
+          : b
+      )
+    );
+
+    setNotificationLog((prev) => [
+      createNotificationLogEntry({
+        channel: 'In-App',
+        title: `Attendance confirmed · ${opp?.title ?? target.opportunityId}`,
+        summary: `${target.volunteerName} confirmed pre-shift attendance at ${confirmedAt} SGT. Charity roster updated.`,
+        opportunityId: target.opportunityId,
+        status: 'Confirmed',
+      }),
+      ...prev,
+    ]);
+
+    notify(
+      'Attendance confirmed',
+      `${target.volunteerName}'s roster status updated for both Volunteer & Charity dashboards.`
+    );
+  };
+
+  const handleConfirmAttendanceByOppId = (oppId: string) => {
+    const match = bookings.find(
+      (b) =>
+        b.opportunityId === oppId &&
+        b.volunteerId === activeVolunteer.id &&
+        b.status === 'Confirmed'
+    );
+    if (!match) {
+      notify(
+        'No confirmed booking found',
+        'Register for this mission first to confirm attendance.',
+        'info'
+      );
+      return;
+    }
+    handleConfirmAttendanceByBookingId(match.id);
   };
 
   const handleCreateOpportunity = (newOppData: Omit<Opportunity, 'id' | 'spotsFilled'>) => {
@@ -454,34 +764,58 @@ export default function App() {
   };
 
   const handleResetDemo = () => {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
     setVolunteers(VOLUNTEER_POOL);
     setActiveVolunteerId('vol-01');
     setOpportunities(INITIAL_OPPORTUNITIES);
     setBookings(INITIAL_BOOKINGS);
     setInvitations([]);
     setCorporates(INITIAL_CORPORATE_ORGS);
+    setAvailabilityOverrides({});
+    setNotificationPreferences(DEFAULT_NOTIFICATION_PREFERENCES);
+    setNotificationLog([]);
+    setRoutePlannerOppId(null);
+    setActiveReminderModal(null);
     if (demoActive) {
       setDemoStage(1);
+      setActiveVolunteerTab('discover');
       setCurrentPage('volunteers');
     }
     notify(
       'Demo data restored',
-      '15 volunteers, 6 charities, 3 corporates, and 10/10 Eunos shift reset.'
+      'All volunteers, shifts, calendar overrides, and notification preferences reset.'
     );
   };
 
+  const modalOppConfirmed = useMemo(() => {
+    if (!activeReminderModal) return false;
+    return bookings.some(
+      (b) =>
+        b.opportunityId === activeReminderModal.opportunity.id &&
+        b.volunteerId === activeVolunteer.id &&
+        b.status === 'Confirmed' &&
+        Boolean(b.attendanceConfirmed)
+    );
+  }, [activeReminderModal, bookings, activeVolunteer.id]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#FAFAF9] text-slate-900">
-      <Navbar currentPage={currentPage} onNavigate={setCurrentPage} />
+      <Navbar currentPage={currentPage} onNavigate={handleNavigate} />
 
       <DemoToolbar
         demoActive={demoActive}
+        demoSequence={demoSequence}
         demoStage={demoStage}
         currentPage={currentPage}
         activeVolunteerId={activeVolunteerId}
         volunteers={volunteers}
+        onChangeSequence={handleChangeDemoSequence}
         onSetStage={handleSetDemoStage}
-        onNavigate={setCurrentPage}
+        onNavigate={handleNavigate}
         onSelectVolunteer={setActiveVolunteerId}
         onResetDemo={handleResetDemo}
         onExitDemo={() => setDemoActive(false)}
@@ -491,13 +825,13 @@ export default function App() {
         {currentPage === 'home' && (
           <HomeView
             opportunities={opportunities}
-            onNavigate={setCurrentPage}
-            onLaunchDemo={() => handleLaunchDemo(1)}
+            onNavigate={handleNavigate}
+            onLaunchDemo={() => handleLaunchDemo(1, 'volunteer-journey')}
             onNotify={(title, desc) => notify(title, desc)}
           />
         )}
 
-        {currentPage === 'volunteers' && (
+        {(currentPage === 'volunteers' || currentPage === 'calendar') && (
           <VolunteerDashboard
             volunteer={activeVolunteer}
             opportunities={opportunities}
@@ -508,6 +842,18 @@ export default function App() {
             holidaysRateLimited={holidaysRateLimited}
             dataGovAuthMode={dataGovAuthMode}
             weather={weather}
+            activeSubTab={activeVolunteerTab}
+            onSelectSubTab={handleSelectVolunteerSubTab}
+            routePlannerOppId={routePlannerOppId}
+            onOpenRoutePlanner={handleOpenRoutePlanner}
+            availabilityOverrides={availabilityOverrides}
+            onUpdateAvailabilityOverride={handleUpdateAvailabilityOverride}
+            notificationPreferences={notificationPreferences}
+            notificationLog={notificationLog}
+            onUpdateNotificationPreferences={setNotificationPreferences}
+            onSimulateReminder={handleSimulateReminder}
+            onConfirmAttendanceByBookingId={handleConfirmAttendanceByBookingId}
+            onConfirmAttendanceByOppId={handleConfirmAttendanceByOppId}
             onUpdateVolunteer={handleUpdateVolunteer}
             onBookShift={handleBookShift}
             onCancelBooking={handleCancelBooking}
@@ -530,6 +876,7 @@ export default function App() {
             onSendRescueInvitation={handleSendRescueInvitation}
             onSwitchToVolunteer={(volId) => {
               setActiveVolunteerId(volId);
+              setActiveVolunteerTab('discover');
               setCurrentPage('volunteers');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -540,7 +887,9 @@ export default function App() {
         {currentPage === 'corporate' && (
           <CorporateDashboard
             corporates={corporates}
-            showStage5Summary={demoActive && demoStage === 5}
+            showStage5Summary={
+              demoActive && demoSequence === 'charity-rescue' && demoStage === 5
+            }
             onCreateCampaign={handleCreateCampaign}
             onNotify={(title, desc) => notify(title, desc)}
           />
@@ -564,11 +913,29 @@ export default function App() {
             weatherRateLimited={Boolean(weather.rateLimited)}
             dataGovAuthMode={dataGovAuthMode}
             onStartGuidedDemo={handleLaunchDemo}
-            onNavigate={setCurrentPage}
+            onNavigate={handleNavigate}
             onResetDemo={handleResetDemo}
           />
         )}
       </main>
+
+      <WhatsAppReminderModal
+        payload={activeReminderModal}
+        isAttendanceConfirmed={modalOppConfirmed}
+        onClose={() => setActiveReminderModal(null)}
+        onViewMission={() => {
+          setActiveReminderModal(null);
+          setActiveVolunteerTab('calendar');
+          setCurrentPage('calendar');
+        }}
+        onPlanJourney={(oppId) => {
+          setActiveReminderModal(null);
+          handleOpenRoutePlanner(oppId);
+        }}
+        onConfirmAttendance={(oppId) => {
+          handleConfirmAttendanceByOppId(oppId);
+        }}
+      />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>

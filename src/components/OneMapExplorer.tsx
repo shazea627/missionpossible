@@ -4,12 +4,24 @@ import 'leaflet/dist/leaflet.css';
 import { LocateFixed, MapPin } from 'lucide-react';
 import { Opportunity, StartingLocation, TravelEstimate } from '../types';
 
+interface RouteStopPin {
+  order: number;
+  label: string;
+  sublabel?: string;
+  lat: number;
+  lng: number;
+}
+
 interface OneMapExplorerProps {
   startingLocation: StartingLocation;
   opportunities: Opportunity[];
   travelTimes: Record<string, TravelEstimate>;
   selectedOppId: string | null;
   onSelectOpportunity: (oppId: string) => void;
+  routePolylines?: [number, number][][];
+  routeStops?: RouteStopPin[];
+  title?: string;
+  subtitle?: string;
 }
 
 export const OneMapExplorer: React.FC<OneMapExplorerProps> = ({
@@ -18,6 +30,10 @@ export const OneMapExplorer: React.FC<OneMapExplorerProps> = ({
   travelTimes,
   selectedOppId,
   onSelectOpportunity,
+  routePolylines,
+  routeStops,
+  title = 'Singapore Volunteer Shift Map (OneMap)',
+  subtitle = 'Pins show open spots remaining · Click any marker to highlight the shift',
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -64,13 +80,14 @@ export const OneMapExplorer: React.FC<OneMapExplorerProps> = ({
     };
   }, []);
 
-  // Update markers whenever startingLocation, opportunities, travelTimes, or selectedOppId changes
+  // Update markers and optional route polylines whenever props change
   useEffect(() => {
     const map = mapInstanceRef.current;
     const layer = markersLayerRef.current;
     if (!map || !layer) return;
 
     layer.clearLayers();
+    const boundsPoints: [number, number][] = [];
 
     // Starting location pin
     const startIcon = L.divIcon({
@@ -89,8 +106,50 @@ export const OneMapExplorer: React.FC<OneMapExplorerProps> = ({
         </div>`
       )
       .addTo(layer);
+    boundsPoints.push([startingLocation.lat, startingLocation.lng]);
 
-    // Opportunity pins
+    // Route polylines (when live OneMap geometry exists)
+    if (routePolylines && routePolylines.length > 0) {
+      routePolylines.forEach((line, idx) => {
+        if (line.length < 2) return;
+        const color = idx % 2 === 0 ? '#0F766E' : '#D97706';
+        L.polyline(line, {
+          color,
+          weight: 5,
+          opacity: 0.88,
+        }).addTo(layer);
+        line.forEach((pt) => boundsPoints.push(pt));
+      });
+    }
+
+    // Numbered route stops (for Route Planner mode)
+    if (routeStops && routeStops.length > 0) {
+      routeStops.forEach((stop) => {
+        const stopIcon = L.divIcon({
+          className: 'mp-stop-marker',
+          html: `<div style="width:28px;height:28px;border-radius:9999px;background:#0F766E;border:3px solid #FFFFFF;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.28);">${stop.order}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        });
+        L.marker([stop.lat, stop.lng], { icon: stopIcon })
+          .bindPopup(
+            `<div style="font-family:DM Sans,sans-serif;min-width:170px;">
+              <div style="font-size:11px;font-weight:700;color:#0F766E;">Stop ${stop.order}</div>
+              <div style="font-size:13px;font-weight:700;color:#0F172A;margin-top:2px;">${stop.label}</div>
+              ${stop.sublabel ? `<div style="font-size:11px;color:#475569;margin-top:2px;">${stop.sublabel}</div>` : ''}
+            </div>`
+          )
+          .addTo(layer);
+        boundsPoints.push([stop.lat, stop.lng]);
+      });
+
+      if (boundsPoints.length >= 2) {
+        map.fitBounds(boundsPoints, { padding: [36, 36], maxZoom: 14 });
+      }
+      return;
+    }
+
+    // Standard Opportunity pins
     opportunities.forEach((opp) => {
       const isSelected = opp.id === selectedOppId;
       const isUrgent = opp.urgency === 'Urgent Fill';
@@ -129,7 +188,15 @@ export const OneMapExplorer: React.FC<OneMapExplorerProps> = ({
 
       marker.addTo(layer);
     });
-  }, [startingLocation, opportunities, travelTimes, selectedOppId, onSelectOpportunity]);
+  }, [
+    startingLocation,
+    opportunities,
+    travelTimes,
+    selectedOppId,
+    onSelectOpportunity,
+    routePolylines,
+    routeStops,
+  ]);
 
   const handleRecenter = () => {
     mapInstanceRef.current?.setView([startingLocation.lat, startingLocation.lng], 13, {
@@ -147,12 +214,8 @@ export const OneMapExplorer: React.FC<OneMapExplorerProps> = ({
         <div className="flex items-center gap-2">
           <MapPin className="w-4 h-4 text-teal-700" />
           <div>
-            <h2 className="font-display text-sm font-bold text-slate-900">
-              Singapore Volunteer Shift Map (OneMap)
-            </h2>
-            <p className="text-xs text-slate-500">
-              Pins show open spots remaining · Click any marker to highlight the shift
-            </p>
+            <h2 className="font-display text-sm font-bold text-slate-900">{title}</h2>
+            <p className="text-xs text-slate-500">{subtitle}</p>
           </div>
         </div>
 
@@ -192,17 +255,20 @@ export const OneMapExplorer: React.FC<OneMapExplorerProps> = ({
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-teal-700 inline-block" />
-            <span>Open Shift</span>
+            <span>{routeStops ? 'Mission Stop' : 'Open Shift'}</span>
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-600 inline-block" />
-            <span>Rescue a Shift (Urgent Fill)</span>
-          </span>
+          {!routeStops && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-600 inline-block" />
+              <span>Rescue a Shift (Urgent Fill)</span>
+            </span>
+          )}
         </div>
         <span className="font-mono-tabular text-slate-500">
-          {opportunities.length} mapped locations
+          {routeStops ? `${routeStops.length} route stop(s)` : `${opportunities.length} mapped locations`}
         </span>
       </div>
     </div>
   );
 };
+

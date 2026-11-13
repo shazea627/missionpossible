@@ -122,3 +122,89 @@ export function calculateMatchScore(
     reasons,
   };
 }
+
+import { ScheduleConflict, ShiftBooking } from '../types';
+import { minutesBetweenShifts, shiftsOverlap } from './time';
+
+export function findConflictingBookings(
+  candidateOpp: Opportunity,
+  volunteerId: string,
+  bookings: ShiftBooking[],
+  opportunities: Opportunity[],
+  estimatedInterShiftTravelMinutes = 25
+): ScheduleConflict[] {
+  const conflicts: ScheduleConflict[] = [];
+  const activeBookings = bookings.filter(
+    (b) => b.volunteerId === volunteerId && b.status !== 'Cancelled'
+  );
+
+  for (const booking of activeBookings) {
+    if (booking.opportunityId === candidateOpp.id) continue;
+    const bookedOpp = opportunities.find((o) => o.id === booking.opportunityId);
+    if (!bookedOpp) continue;
+
+    if (shiftsOverlap(candidateOpp, bookedOpp)) {
+      conflicts.push({
+        booking,
+        opportunity: bookedOpp,
+        type: 'overlap',
+        message: `Overlaps with "${bookedOpp.title}" (${bookedOpp.timeLabel}) on ${bookedOpp.dateLabel}.`,
+      });
+      continue;
+    }
+
+    if (bookedOpp.isoDate === candidateOpp.isoDate) {
+      const gapAfterBooked = minutesBetweenShifts(bookedOpp, candidateOpp);
+      const gapBeforeBooked = minutesBetweenShifts(candidateOpp, bookedOpp);
+      const positiveGap =
+        gapAfterBooked !== null && gapAfterBooked >= 0
+          ? gapAfterBooked
+          : gapBeforeBooked !== null && gapBeforeBooked >= 0
+          ? gapBeforeBooked
+          : null;
+
+      if (positiveGap !== null && positiveGap < estimatedInterShiftTravelMinutes) {
+        conflicts.push({
+          booking,
+          opportunity: bookedOpp,
+          type: 'tight-transition',
+          gapMinutes: positiveGap,
+          requiredTravelMinutes: estimatedInterShiftTravelMinutes,
+          message: `Only ${positiveGap} min between "${bookedOpp.title}" (${bookedOpp.timeLabel}) and this shift; at least ${estimatedInterShiftTravelMinutes} min recommended for Singapore transit.`,
+        });
+      }
+    }
+  }
+
+  return conflicts;
+}
+
+export function suggestConflictAlternatives(
+  candidateOpp: Opportunity,
+  volunteer: VolunteerProfile,
+  allOpportunities: Opportunity[],
+  travelTimes: Record<string, TravelEstimate>,
+  holidays: PublicHoliday[],
+  bookings: ShiftBooking[]
+): Array<{ opportunity: Opportunity; score: number }> {
+  return allOpportunities
+    .filter((o) => {
+      if (o.id === candidateOpp.id) return false;
+      if (o.spotsFilled >= o.spotsTotal) return false;
+      const alreadyBooked = bookings.some(
+        (b) => b.opportunityId === o.id && b.volunteerId === volunteer.id && b.status !== 'Cancelled'
+      );
+      if (alreadyBooked) return false;
+      const conflicts = findConflictingBookings(o, volunteer.id, bookings, allOpportunities);
+      return conflicts.every((c) => c.type !== 'overlap');
+    })
+    .map((o) => ({
+      opportunity: o,
+      score:
+        calculateMatchScore(volunteer, o, travelTimes[o.id], holidays).score +
+        (o.cause === candidateOpp.cause ? 10 : 0),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+}
+

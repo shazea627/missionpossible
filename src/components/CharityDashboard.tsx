@@ -489,6 +489,49 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
         </form>
       )}
 
+      {/* Cancellation & Rescue a Shift Alerts for Charity Coordinator */}
+      {(() => {
+        const charityOppIds = new Set(charityOpportunities.map((o) => o.id));
+        const recentCancellations = bookings.filter(
+          (b) => charityOppIds.has(b.opportunityId) && b.status === 'Cancelled'
+        );
+        if (recentCancellations.length === 0) return null;
+        return (
+          <div
+            role="region"
+            aria-label="Volunteer cancellation alerts"
+            className="bg-amber-50 border border-amber-300 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          >
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-amber-900">
+                Cancellation Alert ({recentCancellations.length}) · Action Required
+              </p>
+              <p className="text-xs text-amber-900">
+                {recentCancellations
+                  .slice(0, 2)
+                  .map((c) => {
+                    const opp = charityOpportunities.find((o) => o.id === c.opportunityId);
+                    return `${c.volunteerName} cancelled "${opp?.title ?? 'Shift'}"`;
+                  })
+                  .join(' · ')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const firstOppId = recentCancellations[0]?.opportunityId;
+                if (firstOppId) setSelectedOppId(firstOppId);
+                setRescueOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <LifeBuoy className="w-3.5 h-3.5" />
+              <span>Find Replacement via Rescue a Shift</span>
+            </button>
+          </div>
+        );
+      })()}
+
       {/* KPI Metrics Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
@@ -695,17 +738,24 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
                             {booking.volunteerSkills.slice(0, 2).join(', ')}
                           </td>
                           <td className="py-2.5 pr-4">
-                            <span
-                              className={`text-xs font-semibold ${
-                                booking.status === 'Present' || booking.status === 'Confirmed'
-                                  ? 'text-teal-700'
-                                  : booking.status === 'Waitlisted'
-                                  ? 'text-amber-700'
-                                  : 'text-red-600'
-                              }`}
-                            >
-                              {booking.status}
-                            </span>
+                            <div className="flex flex-col">
+                              <span
+                                className={`text-xs font-semibold ${
+                                  booking.status === 'Present' || booking.status === 'Confirmed'
+                                    ? 'text-teal-700'
+                                    : booking.status === 'Waitlisted'
+                                    ? 'text-amber-700'
+                                    : 'text-red-600'
+                                }`}
+                              >
+                                {booking.status}
+                              </span>
+                              {booking.attendanceConfirmed && booking.status === 'Confirmed' && (
+                                <span className="text-[11px] font-medium text-teal-800">
+                                  Pre-shift confirmed ({booking.attendanceConfirmedAt ?? 'Today'})
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-2.5 text-right">
                             <div className="inline-flex items-center gap-2">

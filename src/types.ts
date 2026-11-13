@@ -1,4 +1,18 @@
-export type PageView = 'home' | 'volunteers' | 'charities' | 'corporate' | 'pricing' | 'demo';
+export type PageView =
+  | 'home'
+  | 'volunteers'
+  | 'calendar'
+  | 'charities'
+  | 'corporate'
+  | 'pricing'
+  | 'demo';
+
+export type VolunteerSubTab =
+  | 'discover'
+  | 'calendar'
+  | 'route-planner'
+  | 'my-volunteering'
+  | 'notifications';
 
 export type AvailabilitySlot =
   | 'weekday-morning'
@@ -96,6 +110,8 @@ export interface ShiftBooking {
   bookedAt: string;
   status: AttendanceStatus;
   hoursCredited: number;
+  attendanceConfirmed?: boolean;
+  attendanceConfirmedAt?: string;
 }
 
 export interface ShiftInvitation {
@@ -216,3 +232,62 @@ export interface OneMapSearchResult {
   lng: number;
   district?: string;
 }
+
+export interface RouteInstruction {
+  step: string;
+  distanceText?: string;
+  mode?: string;
+}
+
+export interface RoutePlanResult {
+  source: 'live' | 'unavailable';
+  mode: TravelMode;
+  minutes: number | null;
+  distanceKm: number;
+  instructions: RouteInstruction[];
+  polyline: [number, number][];
+  transitSummary?: string;
+  rateLimited?: boolean;
+  reason?: string;
+}
+
+export interface AvailabilityOverride {
+  date: string;
+  status: 'available' | 'unavailable';
+  timeWindows?: ('morning' | 'afternoon' | 'evening')[];
+  note?: string;
+}
+
+export type ReminderOffset = '24h' | '3h' | '1h';
+
+export interface NotificationPreferences {
+  whatsappEnabled: boolean;
+  inAppEnabled: boolean;
+  consentAccepted: boolean;
+  demoContactLabel: string;
+  reminderOffsets: ReminderOffset[];
+  departureRemindersEnabled: boolean;
+  departureBufferMinutes: 10 | 15 | 30;
+  lastMinuteAlertsEnabled: boolean;
+  cancellationAlertsEnabled: boolean;
+}
+
+export interface NotificationLogEntry {
+  id: string;
+  timestampSg: string;
+  channel: 'WhatsApp (Simulated)' | 'In-App' | 'Charity Alert';
+  title: string;
+  summary: string;
+  opportunityId?: string;
+  status: 'Simulated' | 'Delivered in App' | 'Confirmed';
+}
+
+export interface ScheduleConflict {
+  booking: ShiftBooking;
+  opportunity: Opportunity;
+  type: 'overlap' | 'tight-transition';
+  gapMinutes?: number;
+  requiredTravelMinutes?: number;
+  message: string;
+}
+

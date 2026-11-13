@@ -9,7 +9,11 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { PageView } from '../types';
-import { DEMO_STAGES } from './DemoToolbar';
+import {
+  DEMO_STAGES,
+  DemoSequenceType,
+  VOLUNTEER_JOURNEY_STAGES,
+} from './DemoToolbar';
 import { MissionPossibleLogo } from './MissionPossibleLogo';
 
 interface DemoPresentationViewProps {
@@ -24,7 +28,7 @@ interface DemoPresentationViewProps {
   weatherSource: 'live' | 'unavailable';
   weatherRateLimited?: boolean;
   dataGovAuthMode?: 'keyless-public' | 'optional-key-configured';
-  onStartGuidedDemo: (stage?: number) => void;
+  onStartGuidedDemo: (stage?: number, seq?: DemoSequenceType) => void;
   onNavigate: (page: PageView) => void;
   onResetDemo: () => void;
 }
@@ -83,8 +87,8 @@ export const DemoPresentationView: React.FC<DemoPresentationViewProps> = ({
             Demo Mode &amp; Pitch Deck
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Launch the 5-stage live pitch walkthrough across Alex (Eunos), EastCare Food Pantry,
-            and Corporate CSR—or present the Miro Business Model Canvas slides.
+            Walk through the 6-step Volunteer Journey (Find → Register → Schedule → Route → Remind
+            → Attend) or the 5-stage Charity Rescue &amp; Corporate CSR pitch.
           </p>
         </div>
 
@@ -100,7 +104,7 @@ export const DemoPresentationView: React.FC<DemoPresentationViewProps> = ({
               }`}
             >
               <Play className="w-3.5 h-3.5 text-teal-700" />
-              <span>5-Stage Demo Guide</span>
+              <span>Guided Demo Tracks</span>
             </button>
             <button
               type="button"
@@ -163,25 +167,71 @@ export const DemoPresentationView: React.FC<DemoPresentationViewProps> = ({
             </div>
           </div>
 
-          {/* 5-Stage Guided Pitch Launcher */}
+          {/* Track A: 6-Step Volunteer Journey */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
               <div>
                 <h2 className="font-display text-lg font-bold text-slate-900">
-                  5-Stage Guided Pitch Script
+                  Track A: End-to-End Volunteer Journey (Find → Register → Schedule → Route → Remind → Attend)
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Click Launch Demo from Stage 1 or jump directly into any stage with the
-                  persistent presentation toolbar.
+                  Completable in under 3 minutes: Alex (Eunos) finds Bedok Food Pack, checks My
+                  Calendar, plans OneMap route &amp; departure time, simulates WhatsApp reminder,
+                  and confirms attendance.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => onStartGuidedDemo(1)}
+                onClick={() => onStartGuidedDemo(1, 'volunteer-journey')}
                 className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <Play className="w-3.5 h-3.5" />
-                <span>Launch Stage 1 Demo</span>
+                <span>Launch 6-Step Journey</span>
+              </button>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {VOLUNTEER_JOURNEY_STAGES.map((s) => (
+                <div
+                  key={s.stage}
+                  className="py-3.5 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{s.title}</p>
+                    <p className="text-xs text-slate-600 mt-0.5">{s.summary}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onStartGuidedDemo(s.stage, 'volunteer-journey')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <span>Jump to Step {s.stage}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Track B: 5-Stage Charity Rescue Pitch */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <h2 className="font-display text-lg font-bold text-slate-900">
+                  Track B: 5-Stage Charity Rescue a Shift &amp; Corporate CSR Pitch
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Demonstrate EastCare Food Pantry’s 10 → 9 → 10 shift recovery and Corporate CSR
+                  reporting.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onStartGuidedDemo(1, 'charity-rescue')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-slate-900 bg-amber-400 hover:bg-amber-300 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Launch Rescue Pitch</span>
               </button>
             </div>
 
@@ -189,15 +239,15 @@ export const DemoPresentationView: React.FC<DemoPresentationViewProps> = ({
               {DEMO_STAGES.map((s) => (
                 <div
                   key={s.stage}
-                  className="py-4 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="py-3.5 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div>
                     <p className="text-sm font-bold text-slate-900">{s.title}</p>
-                    <p className="text-xs text-slate-600 mt-1">{s.summary}</p>
+                    <p className="text-xs text-slate-600 mt-0.5">{s.summary}</p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => onStartGuidedDemo(s.stage)}
+                    onClick={() => onStartGuidedDemo(s.stage, 'charity-rescue')}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     <span>Jump to Stage {s.stage}</span>

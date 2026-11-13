@@ -9,29 +9,45 @@ import {
   CloudRain,
   ExternalLink,
   MapPin,
+  MessageSquare,
   Navigation,
   Search,
   ShieldAlert,
   ShieldCheck,
   Sun,
+  X,
   XCircle,
 } from 'lucide-react';
 import {
+  AvailabilityOverride,
   AvailabilitySlot,
   CauseCategory,
+  NotificationLogEntry,
+  NotificationPreferences,
   OneMapSearchResult,
   Opportunity,
   PublicHoliday,
+  ScheduleConflict,
   ShiftBooking,
   ShiftInvitation,
   TravelEstimate,
   TravelMode,
   VolunteerProfile,
+  VolunteerSubTab,
   WeatherApiState,
 } from '../types';
 import { downloadShiftIcs } from '../utils/calendar';
-import { calculateMatchScore, SLOT_LABELS } from '../utils/matching';
+import {
+  calculateMatchScore,
+  findConflictingBookings,
+  SLOT_LABELS,
+  suggestConflictAlternatives,
+} from '../utils/matching';
+import { WhatsAppReminderPayload } from '../utils/notifications';
+import { MissionCalendarView } from './MissionCalendarView';
+import { NotificationSettingsView } from './NotificationSettingsView';
 import { OneMapExplorer } from './OneMapExplorer';
+import { RoutePlannerView } from './RoutePlannerView';
 
 interface VolunteerDashboardProps {
   volunteer: VolunteerProfile;
@@ -43,6 +59,18 @@ interface VolunteerDashboardProps {
   holidaysRateLimited?: boolean;
   dataGovAuthMode?: 'keyless-public' | 'optional-key-configured';
   weather: WeatherApiState;
+  activeSubTab: VolunteerSubTab;
+  onSelectSubTab: (tab: VolunteerSubTab) => void;
+  routePlannerOppId: string | null;
+  onOpenRoutePlanner: (oppId: string) => void;
+  availabilityOverrides: Record<string, AvailabilityOverride>;
+  onUpdateAvailabilityOverride: (date: string, override: AvailabilityOverride | null) => void;
+  notificationPreferences: NotificationPreferences;
+  notificationLog: NotificationLogEntry[];
+  onUpdateNotificationPreferences: (next: NotificationPreferences) => void;
+  onSimulateReminder: (payload: WhatsAppReminderPayload) => void;
+  onConfirmAttendanceByBookingId: (bookingId: string) => void;
+  onConfirmAttendanceByOppId: (oppId: string) => void;
   onUpdateVolunteer: (updated: VolunteerProfile) => void;
   onBookShift: (opportunityId: string) => void;
   onCancelBooking: (bookingId: string) => void;
@@ -133,6 +161,18 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   holidaysRateLimited = false,
   dataGovAuthMode = 'keyless-public',
   weather,
+  activeSubTab,
+  onSelectSubTab,
+  routePlannerOppId,
+  onOpenRoutePlanner,
+  availabilityOverrides,
+  onUpdateAvailabilityOverride,
+  notificationPreferences,
+  notificationLog,
+  onUpdateNotificationPreferences,
+  onSimulateReminder,
+  onConfirmAttendanceByBookingId,
+  onConfirmAttendanceByOppId,
   onUpdateVolunteer,
   onBookShift,
   onCancelBooking,
@@ -140,12 +180,15 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   onNotify,
 }) => {
   const recommendedRef = useRef<HTMLDivElement | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'discover' | 'my-volunteering'>('discover');
   const [searchQuery, setSearchQuery] = useState('');
   const [fitFilter, setFitFilter] = useState<'all' | 'available' | 'rescue' | 'holiday'>('all');
   const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(true);
   const [missionRanAt, setMissionRanAt] = useState<string | null>(null);
+  const [conflictModal, setConflictModal] = useState<{
+    candidateOpp: Opportunity;
+    conflicts: ScheduleConflict[];
+  } | null>(null);
 
   // OneMap starting location search
   const [postalQuery, setPostalQuery] = useState(volunteer.startingLocation.postalCode);
@@ -397,7 +440,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   }, [opportunities, travelTimes, volunteer, holidays, fitFilter, searchQuery]);
 
   const handleFindMyMission = () => {
-    setActiveSubTab('discover');
+    onSelectSubTab('discover');
     setMissionRanAt(new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }));
     onNotify(
       `Found ${scoredOpportunities.length} matched missions for ${volunteer.name}`,
@@ -406,6 +449,20 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     window.setTimeout(() => {
       recommendedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
+  };
+
+  const handleAttemptBookShift = (opp: Opportunity) => {
+    const conflicts = findConflictingBookings(
+      opp,
+      volunteer.id,
+      bookings,
+      opportunities
+    );
+    if (conflicts.length > 0) {
+      setConflictModal({ candidateOpp: opp, conflicts });
+      return;
+    }
+    onBookShift(opp.id);
   };
 
   const handleDownloadIcs = (opp: Opportunity) => {
@@ -527,33 +584,66 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           </div>
         </div>
 
-        {/* Sub-navigation between Find/Recommended Missions and My Volunteering */}
+        {/* Unified 5-Tab Volunteer Workspace Navigation */}
         <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
             <button
               type="button"
-              onClick={() => setActiveSubTab('discover')}
-              className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              onClick={() => onSelectSubTab('discover')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 activeSubTab === 'discover'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Find &amp; Recommended Missions ({scoredOpportunities.length})
+              Discover Missions ({scoredOpportunities.length})
             </button>
             <button
               type="button"
-              onClick={() => setActiveSubTab('my-volunteering')}
-              className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              onClick={() => onSelectSubTab('calendar')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                activeSubTab === 'calendar'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              My Calendar
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectSubTab('route-planner')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                activeSubTab === 'route-planner'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Plan My Journey
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectSubTab('my-volunteering')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 activeSubTab === 'my-volunteering'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              My Volunteering ({upcomingBookings.length} upcoming)
+              My Volunteering ({upcomingBookings.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectSubTab('notifications')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                activeSubTab === 'notifications'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Notification Settings
             </button>
           </div>
-          {missionRanAt && (
+          {missionRanAt && activeSubTab === 'discover' && (
             <span className="font-mono-tabular text-xs text-teal-700">
               Last matched at {missionRanAt}
             </span>
@@ -1028,6 +1118,17 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                   const holidayHit = holidayMap.get(opportunity.isoDate);
                   const dayForecast = weatherByDate.get(opportunity.isoDate);
                   const isSelectedOnMap = selectedOppId === opportunity.id;
+                  const conflicts = !existingBooking
+                    ? findConflictingBookings(
+                        opportunity,
+                        volunteer.id,
+                        bookings,
+                        opportunities
+                      )
+                    : [];
+                  const hasOverlapConflict = conflicts.some((c) => c.type === 'overlap');
+                  const hasTightConflict =
+                    !hasOverlapConflict && conflicts.some((c) => c.type === 'tight-transition');
 
                   return (
                     <article
@@ -1131,6 +1232,31 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                         </span>
                       </div>
 
+                      {/* Compatibility & Conflict Status Strip */}
+                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span className={match.travelMatch ? 'text-teal-700 font-medium' : 'text-amber-700 font-medium'}>
+                          {match.travelMatch
+                            ? `Transport compatible (${volunteer.travelMode.toUpperCase()})`
+                            : 'Longer commute'}
+                        </span>
+                        <span aria-hidden="true" className="text-slate-300">·</span>
+                        <span className={match.availabilityMatch ? 'text-teal-700 font-medium' : 'text-slate-500'}>
+                          {match.availabilityMatch ? 'Fits availability' : 'Outside selected slots'}
+                        </span>
+                        <span aria-hidden="true" className="text-slate-300">·</span>
+                        {hasOverlapConflict ? (
+                          <span className="font-semibold text-red-600">
+                            Conflict: Overlaps existing booking
+                          </span>
+                        ) : hasTightConflict ? (
+                          <span className="font-semibold text-amber-700">
+                            Tight same-day transit window
+                          </span>
+                        ) : (
+                          <span className="text-teal-700 font-medium">No schedule conflict</span>
+                        )}
+                      </div>
+
                       {/* Outdoor Weather Forecast + Wet-Weather Reminder (No Fabrication) */}
                       {opportunity.isOutdoor && (
                         <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -1171,54 +1297,69 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                             : 'Outside selected availability slots'}
                         </p>
 
-                        {existingBooking ? (
-                          <div className="inline-flex flex-wrap items-center gap-3 shrink-0">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700">
-                              <CheckCircle2 className="w-4 h-4" />
-                              {existingBooking.status === 'Present'
-                                ? 'Completed & Verified'
-                                : `Registered (${existingBooking.status})`}
-                            </span>
-                            {existingBooking.status === 'Confirmed' && (
-                              <button
-                                type="button"
-                                onClick={() => handleDownloadIcs(opportunity)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
-                              >
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>Download .ics</span>
-                              </button>
-                            )}
-                            {existingBooking.status !== 'Present' && (
-                              <button
-                                type="button"
-                                onClick={() => onCancelBooking(existingBooking.id)}
-                                className="px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            )}
-                          </div>
-                        ) : (
+                        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                           <button
                             type="button"
-                            onClick={() => onBookShift(opportunity.id)}
-                            className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                              opportunity.urgency === 'Urgent Fill'
-                                ? 'bg-amber-600 hover:bg-amber-700'
-                                : 'bg-teal-700 hover:bg-teal-800'
-                            }`}
+                            onClick={() => onOpenRoutePlanner(opportunity.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-200 hover:border-slate-300 rounded-lg cursor-pointer"
                           >
-                            <CalendarCheck className="w-3.5 h-3.5" />
-                            <span>
-                              {spotsLeft === 0
-                                ? 'Join Waitlist'
-                                : opportunity.urgency === 'Urgent Fill'
-                                ? 'Rescue & Register'
-                                : 'Register'}
-                            </span>
+                            <Navigation className="w-3.5 h-3.5 text-teal-700" />
+                            <span>Plan Journey</span>
                           </button>
-                        )}
+
+                          {existingBooking ? (
+                            <div className="inline-flex flex-wrap items-center gap-2.5">
+                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700">
+                                <CheckCircle2 className="w-4 h-4" />
+                                {existingBooking.status === 'Present'
+                                  ? 'Completed & Verified'
+                                  : `Registered (${existingBooking.status})`}
+                              </span>
+                              {existingBooking.status === 'Confirmed' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadIcs(opportunity)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
+                                >
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>Download .ics</span>
+                                </button>
+                              )}
+                              {existingBooking.status !== 'Present' && (
+                                <button
+                                  type="button"
+                                  onClick={() => onCancelBooking(existingBooking.id)}
+                                  className="px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleAttemptBookShift(opportunity)}
+                              className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                                hasOverlapConflict
+                                  ? 'bg-red-700 hover:bg-red-800'
+                                  : opportunity.urgency === 'Urgent Fill'
+                                  ? 'bg-amber-600 hover:bg-amber-700'
+                                  : 'bg-teal-700 hover:bg-teal-800'
+                              }`}
+                            >
+                              <CalendarCheck className="w-3.5 h-3.5" />
+                              <span>
+                                {hasOverlapConflict
+                                  ? 'Schedule Conflict'
+                                  : spotsLeft === 0
+                                  ? 'Join Waitlist'
+                                  : opportunity.urgency === 'Urgent Fill'
+                                  ? 'Rescue & Register'
+                                  : 'Register'}
+                              </span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </article>
                   );
@@ -1227,6 +1368,59 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
             )}
           </div>
         </div>
+      ) : activeSubTab === 'calendar' ? (
+        <MissionCalendarView
+          volunteer={volunteer}
+          opportunities={opportunities}
+          bookings={bookings}
+          invitations={invitations}
+          holidays={holidays}
+          holidaysSource={holidaysSource}
+          availabilityOverrides={availabilityOverrides}
+          onUpdateAvailabilityOverride={onUpdateAvailabilityOverride}
+          onUpdateVolunteer={onUpdateVolunteer}
+          onBookShift={(oppId) => {
+            const opp = opportunities.find((o) => o.id === oppId);
+            if (opp) handleAttemptBookShift(opp);
+          }}
+          onCancelBooking={onCancelBooking}
+          onConfirmAttendance={onConfirmAttendanceByBookingId}
+          onPlanJourney={onOpenRoutePlanner}
+          onRespondInvitation={onRespondInvitation}
+          onNotify={onNotify}
+        />
+      ) : activeSubTab === 'route-planner' ? (
+        <RoutePlannerView
+          volunteer={volunteer}
+          opportunities={opportunities}
+          bookings={bookings}
+          travelTimes={travelTimes}
+          initialOpportunityId={routePlannerOppId}
+          arrivalBufferMinutes={notificationPreferences.departureBufferMinutes}
+          onChangeBufferMinutes={(buf) =>
+            onUpdateNotificationPreferences({
+              ...notificationPreferences,
+              departureBufferMinutes: buf,
+            })
+          }
+          onUpdateVolunteer={onUpdateVolunteer}
+          onOpenCalendar={() => onSelectSubTab('calendar')}
+          onNotify={onNotify}
+        />
+      ) : activeSubTab === 'notifications' ? (
+        <NotificationSettingsView
+          volunteer={volunteer}
+          opportunities={opportunities}
+          bookings={bookings}
+          travelTimes={travelTimes}
+          preferences={notificationPreferences}
+          notificationLog={notificationLog}
+          onUpdatePreferences={onUpdateNotificationPreferences}
+          onSimulateReminder={onSimulateReminder}
+          onViewMission={() => onSelectSubTab('calendar')}
+          onPlanJourney={onOpenRoutePlanner}
+          onConfirmAttendance={onConfirmAttendanceByOppId}
+        />
       ) : (
         /* SECTION C: MY VOLUNTEERING */
         <section className="space-y-6">
@@ -1261,13 +1455,21 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           {/* Calendar Integration Honesty Note */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600">
             <div>
-              <p className="font-semibold text-slate-900">Calendar Export Options</p>
+              <p className="font-semibold text-slate-900">Calendar Export &amp; Reminder Shortcuts</p>
               <p className="mt-0.5">
                 Direct Google Calendar sync is not enabled (OAuth not configured). Use{' '}
-                <strong>Download .ics</strong> on any confirmed commitment to add the event title,
-                date, time, location, and organiser to Google Calendar, Apple Calendar, or Outlook.
+                <strong>Download .ics</strong> on any confirmed commitment or manage shifts inside{' '}
+                <strong>My Calendar</strong>.
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => onSelectSubTab('notifications')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Notification Settings</span>
+            </button>
           </div>
 
           {/* Upcoming Commitments */}
@@ -1282,7 +1484,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                 </p>
                 <button
                   type="button"
-                  onClick={() => setActiveSubTab('discover')}
+                  onClick={() => onSelectSubTab('discover')}
                   className="mt-3 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
                 >
                   Browse Recommended Missions
@@ -1299,8 +1501,16 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                       className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                     >
                       <div>
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                           <span className="font-semibold text-teal-700">{booking.status}</span>
+                          {booking.attendanceConfirmed && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-semibold text-teal-800">
+                                Attendance Confirmed ({booking.attendanceConfirmedAt ?? 'Ready'})
+                              </span>
+                            </>
+                          )}
                           <span aria-hidden="true">·</span>
                           <span>{opp.charityName}</span>
                         </div>
@@ -1309,7 +1519,25 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                           {opp.dateLabel} · {opp.timeLabel} · {opp.location} (S{opp.postalCode})
                         </p>
                       </div>
-                      <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => onOpenRoutePlanner(opp.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg cursor-pointer"
+                        >
+                          <Navigation className="w-3.5 h-3.5 text-teal-700" />
+                          <span>Plan My Journey</span>
+                        </button>
+                        {booking.status === 'Confirmed' && !booking.attendanceConfirmed && (
+                          <button
+                            type="button"
+                            onClick={() => onConfirmAttendanceByBookingId(booking.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-900 bg-amber-100 hover:bg-amber-200 rounded-lg cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Confirm Attendance</span>
+                          </button>
+                        )}
                         {booking.status === 'Confirmed' && (
                           <button
                             type="button"
@@ -1336,6 +1564,114 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
             )}
           </div>
         </section>
+      )}
+
+      {/* Scheduling Conflict Detection Modal */}
+      {conflictModal && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-[2px] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="conflict-modal-title"
+        >
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2 text-amber-800">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <h3 id="conflict-modal-title" className="font-display text-lg font-bold text-slate-900">
+                  {conflictModal.conflicts.some((c) => c.type === 'overlap')
+                    ? 'Scheduling Conflict Detected'
+                    : 'Tight Inter-Shift Transit Warning'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConflictModal(null)}
+                aria-label="Close conflict dialog"
+                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 text-xs space-y-1.5">
+              <p className="font-semibold text-slate-900">
+                Selected Shift: {conflictModal.candidateOpp.title} (
+                {conflictModal.candidateOpp.dateLabel} · {conflictModal.candidateOpp.timeLabel})
+              </p>
+              {conflictModal.conflicts.map((c) => (
+                <p key={c.booking.id} className="text-red-700 font-medium">
+                  {c.message}
+                </p>
+              ))}
+            </div>
+
+            {/* Conflict-Free Alternative Suggestions */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-700">
+                Suggested Conflict-Free Alternatives
+              </p>
+              <div className="space-y-1.5">
+                {suggestConflictAlternatives(
+                  conflictModal.candidateOpp,
+                  volunteer,
+                  opportunities,
+                  travelTimes,
+                  holidays,
+                  bookings
+                ).map(({ opportunity: alt, score }) => (
+                  <div
+                    key={alt.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white text-xs"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">{alt.title}</p>
+                      <p className="text-slate-500 mt-0.5 font-mono-tabular">
+                        {alt.dateLabel} · {alt.timeLabel} · {score}% match
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConflictModal(null);
+                        onBookShift(alt.id);
+                      }}
+                      className="px-3 py-1.5 font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shrink-0 cursor-pointer"
+                    >
+                      Register Instead
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setConflictModal(null);
+                  onSelectSubTab('calendar');
+                }}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+              >
+                Manage in My Calendar
+              </button>
+              {!conflictModal.conflicts.some((c) => c.type === 'overlap') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = conflictModal.candidateOpp.id;
+                    setConflictModal(null);
+                    onBookShift(id);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg cursor-pointer"
+                >
+                  Register Anyway
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -11,6 +11,7 @@ interface NavbarProps {
 const NAV_ITEMS: { id: PageView; label: string }[] = [
   { id: 'home', label: 'Overview' },
   { id: 'volunteers', label: 'Volunteers' },
+  { id: 'calendar', label: 'My Calendar' },
   { id: 'charities', label: 'Charities' },
   { id: 'corporate', label: 'Corporate CSR' },
   { id: 'pricing', label: 'Pricing' },

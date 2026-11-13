@@ -197,7 +197,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
               <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
                 <span className="text-xs text-slate-500">
-                  15 volunteers · 6 charities · 12 SG shifts
+                  15 volunteers · 6 charities · {opportunities.length} SG shifts
                 </span>
                 <button
                   type="button"
@@ -227,7 +227,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </p>
           </div>
           <div className="lg:border-l lg:border-slate-200 lg:pl-6">
-            <p className="font-mono-tabular text-2xl sm:text-3xl font-bold text-teal-700">12</p>
+            <p className="font-mono-tabular text-2xl sm:text-3xl font-bold text-teal-700">
+              {opportunities.length}
+            </p>
             <p className="text-xs sm:text-sm text-slate-600 mt-1">
               Singapore volunteer shifts spanning 6 cause areas &amp; public holidays
             </p>
