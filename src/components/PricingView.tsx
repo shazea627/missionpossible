@@ -40,15 +40,15 @@ export const PricingView: React.FC<PricingViewProps> = ({ onNotify }) => {
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold text-teal-700">
-            MissionPossible Plans &amp; Revenue Architecture
+            MissionPossible Plans
           </p>
           <h1 className="font-display text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 mt-2 text-balance">
-            Free for volunteers. Sustainable infrastructure for charities and corporates.
+            Free for volunteers. Simple plans for charities and companies.
           </h1>
           <p className="mt-3 text-base text-slate-600 leading-relaxed">
-            Our pricing follows a clear civic model: individual volunteers always join free, small
-            charities access core shift matching at zero cost, and corporate CSR subscriptions fund
-            shared ecosystem reliability.
+            Individual volunteers always use MissionPossible free. Small charities get core shift
+            tools at zero cost, while larger organisations and CSR teams choose a plan that fits
+            their volunteering programme.
           </p>
         </div>
 

@@ -5,16 +5,19 @@ import {
   Calendar,
   CalendarCheck,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   CloudRain,
   ExternalLink,
   MapPin,
-  MessageSquare,
   Navigation,
   Search,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Sun,
+  User,
   X,
   XCircle,
 } from 'lucide-react';
@@ -44,6 +47,7 @@ import {
   suggestConflictAlternatives,
 } from '../utils/matching';
 import { WhatsAppReminderPayload } from '../utils/notifications';
+import { calculateSuggestedDeparture } from '../utils/time';
 import { MissionCalendarView } from './MissionCalendarView';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { OneMapExplorer } from './OneMapExplorer';
@@ -51,6 +55,8 @@ import { RoutePlannerView } from './RoutePlannerView';
 
 interface VolunteerDashboardProps {
   volunteer: VolunteerProfile;
+  allVolunteers?: VolunteerProfile[];
+  onSelectVolunteer?: (volunteerId: string) => void;
   opportunities: Opportunity[];
   bookings: ShiftBooking[];
   invitations: ShiftInvitation[];
@@ -111,9 +117,9 @@ const ALL_SKILLS = [
 
 const TRAVEL_MODES: { id: TravelMode; label: string }[] = [
   { id: 'pt', label: 'Public Transport' },
-  { id: 'drive', label: 'Drive' },
-  { id: 'walk', label: 'Walk' },
-  { id: 'cycle', label: 'Cycle' },
+  { id: 'walk', label: 'Walking' },
+  { id: 'drive', label: 'Driving' },
+  { id: 'cycle', label: 'Cycling' },
 ];
 
 const QUICK_SG_LOCATIONS: OneMapSearchResult[] = [
@@ -151,15 +157,36 @@ const QUICK_SG_LOCATIONS: OneMapSearchResult[] = [
   },
 ];
 
+const MOBILE_VOLUNTEER_TABS: { id: VolunteerSubTab; label: string }[] = [
+  { id: 'discover', label: 'Discover' },
+  { id: 'calendar', label: 'My Calendar' },
+  { id: 'my-volunteering', label: 'My Missions' },
+  { id: 'route-planner', label: 'Plan My Journey' },
+  { id: 'profile', label: 'Profile' },
+];
+
+function travelModeReadable(mode: TravelMode): string {
+  switch (mode) {
+    case 'pt':
+      return 'Public transport';
+    case 'walk':
+      return 'Walking';
+    case 'drive':
+      return 'Driving';
+    case 'cycle':
+      return 'Cycling';
+  }
+}
+
 export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   volunteer,
+  allVolunteers,
+  onSelectVolunteer,
   opportunities,
   bookings,
   invitations,
   holidays,
   holidaysSource,
-  holidaysRateLimited = false,
-  dataGovAuthMode = 'keyless-public',
   weather,
   activeSubTab,
   onSelectSubTab,
@@ -181,16 +208,21 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
 }) => {
   const recommendedRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [fitFilter, setFitFilter] = useState<'all' | 'available' | 'rescue' | 'holiday'>('all');
+  const [fitFilter, setFitFilter] = useState<'all' | 'available' | 'urgent' | 'holiday'>('all');
+  const [commitmentFilter, setCommitmentFilter] = useState<'all' | 'One-time' | 'Recurring'>('all');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
-  const [showMap, setShowMap] = useState(true);
-  const [missionRanAt, setMissionRanAt] = useState<string | null>(null);
-  const [conflictModal, setConflictModal] = useState<{
-    candidateOpp: Opportunity;
+  const [showMap, setShowMap] = useState(false);
+
+  // Unified 3-Step Registration & Friendly Confirmation Modal
+  const [registrationModal, setRegistrationModal] = useState<{
+    step: 'review' | 'confirmed';
+    opportunity: Opportunity;
     conflicts: ScheduleConflict[];
+    travel?: TravelEstimate;
   } | null>(null);
 
-  // OneMap starting location search
+  // Starting location search
   const [postalQuery, setPostalQuery] = useState(volunteer.startingLocation.postalCode);
   const [placeResults, setPlaceResults] = useState<OneMapSearchResult[]>([]);
   const [searchingPlace, setSearchingPlace] = useState(false);
@@ -199,8 +231,10 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
 
   // Travel times from starting location
   const [travelTimes, setTravelTimes] = useState<Record<string, TravelEstimate>>({});
-  const [travelSource, setTravelSource] = useState<'live' | 'unavailable'>('unavailable');
   const [loadingTravel, setLoadingTravel] = useState(false);
+
+  const normalizedTab: VolunteerSubTab =
+    activeSubTab === 'notifications' ? 'profile' : activeSubTab;
 
   useEffect(() => {
     setPostalQuery(volunteer.startingLocation.postalCode);
@@ -228,7 +262,6 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         };
         if (active && data.travelTimes) {
           setTravelTimes(data.travelTimes);
-          setTravelSource(data.source);
         }
       } catch {
         // Keep previous state cleanly
@@ -247,7 +280,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     opportunities,
   ]);
 
-  const handleOneMapSearch = async (e: React.FormEvent) => {
+  const handlePlaceSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const q = postalQuery.trim();
     if (!q) {
@@ -267,10 +300,10 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         setPlaceSearchSource(data.source);
       } else {
         setPlaceResults([]);
-        setPlaceSearchError('No Singapore address or postal code matched that query.');
+        setPlaceSearchError('No Singapore address or postal code matched that search.');
       }
     } catch {
-      setPlaceSearchError('Unable to reach OneMap search service right now.');
+      setPlaceSearchError('Unable to look up that address right now. Please try a preset area.');
     } finally {
       setSearchingPlace(false);
     }
@@ -353,7 +386,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
 
   const upcomingHolidays = useMemo(() => {
     const todayIso = new Date().toISOString().slice(0, 10);
-    return holidays.filter((h) => h.date >= todayIso).slice(0, 6);
+    return holidays.filter((h) => h.date >= todayIso).slice(0, 5);
   }, [holidays]);
 
   const longWeekendHolidays = useMemo(() => {
@@ -382,7 +415,6 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         match: calculateMatchScore(volunteer, opp, travelTimes[opp.id], holidays),
       }))
       .filter(({ opportunity, travel, match }) => {
-        // Duration preference filter
         if (volunteer.preferredDuration === 'short' && opportunity.durationHours > 2.5) {
           return false;
         }
@@ -396,7 +428,6 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           return false;
         }
 
-        // Travel convenience filter: if live travel minutes exist, enforce limit; otherwise enforce radius proxy when < 90
         if (volunteer.maxTravelMinutes < 90) {
           if (travel && travel.minutes !== null) {
             if (travel.minutes > volunteer.maxTravelMinutes) return false;
@@ -414,13 +445,18 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         }
 
         if (fitFilter === 'available' && !match.availabilityMatch) return false;
-        if (fitFilter === 'rescue' && opportunity.urgency !== 'Urgent Fill') return false;
+        if (fitFilter === 'urgent' && opportunity.urgency !== 'Urgent Fill') return false;
         if (
           fitFilter === 'holiday' &&
           !match.holidayMatch &&
           opportunity.slot !== 'public-holiday'
         ) {
           return false;
+        }
+
+        if (commitmentFilter !== 'all') {
+          const oppCommitment = opportunity.commitmentType ?? 'One-time';
+          if (oppCommitment !== commitmentFilter) return false;
         }
 
         if (searchQuery.trim()) {
@@ -437,55 +473,74 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         return true;
       })
       .sort((a, b) => b.match.score - a.match.score);
-  }, [opportunities, travelTimes, volunteer, holidays, fitFilter, searchQuery]);
+  }, [opportunities, travelTimes, volunteer, holidays, fitFilter, commitmentFilter, searchQuery]);
 
-  const handleFindMyMission = () => {
-    onSelectSubTab('discover');
-    setMissionRanAt(new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }));
-    onNotify(
-      `Found ${scoredOpportunities.length} matched missions for ${volunteer.name}`,
-      `Ranked by availability, skills, causes, and proximity to ${volunteer.startingLocation.label}.`
-    );
-    window.setTimeout(() => {
-      recommendedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 80);
-  };
-
-  const handleAttemptBookShift = (opp: Opportunity) => {
+  const handleOpenRegistrationModal = (opp: Opportunity) => {
     const conflicts = findConflictingBookings(
       opp,
       volunteer.id,
       bookings,
       opportunities
     );
-    if (conflicts.length > 0) {
-      setConflictModal({ candidateOpp: opp, conflicts });
-      return;
-    }
-    onBookShift(opp.id);
+    setRegistrationModal({
+      step: 'review',
+      opportunity: opp,
+      conflicts,
+      travel: travelTimes[opp.id],
+    });
+  };
+
+  const handleConfirmRegistration = (oppId: string) => {
+    onBookShift(oppId);
+    setRegistrationModal((prev) =>
+      prev && prev.opportunity.id === oppId ? { ...prev, step: 'confirmed' } : prev
+    );
   };
 
   const handleDownloadIcs = (opp: Opportunity) => {
     const filename = downloadShiftIcs(opp, volunteer.name);
     onNotify(
-      'ICS calendar file downloaded',
-      `Saved ${filename}. Open it to add to Apple Calendar, Outlook, or Google Calendar.`
+      'Calendar invite saved (.ics)',
+      `Downloaded ${filename}. Open it to add this mission to your calendar.`
     );
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Pending Rescue a Shift Invitations Banner */}
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+      {/* Mobile Quick Navigation Strip (Desktop already shows 5 items cleanly in Navbar) */}
+      <div className="md:hidden overflow-x-auto pb-1 -mx-1 px-1">
+        <div className="inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl min-w-full">
+          {MOBILE_VOLUNTEER_TABS.map((tab) => {
+            const active = normalizedTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onSelectSubTab(tab.id)}
+                className={`flex-1 px-3 min-h-[40px] text-xs font-semibold rounded-lg whitespace-nowrap cursor-pointer ${
+                  active
+                    ? 'bg-teal-700 text-white'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Urgent Shift Invitations Banner (Only when coordinator invited this volunteer) */}
       {pendingInvitations.length > 0 && (
         <div
           role="region"
-          aria-label="Shift Rescue Invitations"
+          aria-label="Urgent shift invitations"
           className="bg-amber-50 border border-amber-300 rounded-2xl p-5 space-y-3"
         >
           <div className="flex items-center gap-2 text-amber-900">
             <BellRing className="w-5 h-5 text-amber-700 shrink-0" />
             <h2 className="font-display text-base font-bold">
-              Rescue a Shift Invitation for {volunteer.name} ({pendingInvitations.length})
+              You have {pendingInvitations.length === 1 ? 'an urgent shift invitation' : `${pendingInvitations.length} urgent shift invitations`}
             </h2>
           </div>
           <div className="space-y-3">
@@ -501,30 +556,29 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                     <p className="text-sm font-bold text-slate-900">
                       {opp.title} · {inv.charityName}
                     </p>
-                    <p className="text-xs text-slate-600 mt-1">
-                      {opp.dateLabel} · {opp.timeLabel} · {opp.location} (S{opp.postalCode}) ·{' '}
-                      <span className="font-mono-tabular font-semibold text-teal-700">
-                        {inv.matchScore}% match
-                      </span>
+                    <p className="text-xs sm:text-sm text-slate-600 mt-1">
+                      {opp.dateLabel} · {opp.timeLabel} · {opp.location} (S{opp.postalCode})
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Why you matched: {inv.matchReasons.join(' · ')}
-                    </p>
+                    {inv.matchReasons.length > 0 && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        {inv.matchReasons.slice(0, 3).join(' · ')}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
                       onClick={() => onRespondInvitation(inv.id, false)}
-                      className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                      className="px-4 min-h-[42px] text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
                     >
                       Decline
                     </button>
                     <button
                       type="button"
                       onClick={() => onRespondInvitation(inv.id, true)}
-                      className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+                      className="px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
                     >
-                      Accept Invitation
+                      Accept Spot
                     </button>
                   </div>
                 </div>
@@ -534,225 +588,117 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         </div>
       )}
 
-      {/* Volunteer Profile Header + Navigation Tabs */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1 font-semibold text-teal-700">
-                <ShieldCheck className="w-4 h-4" />
-                Singpass {volunteer.singpassTier}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Start: {volunteer.startingLocation.label} (S{volunteer.startingLocation.postalCode})
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Max travel:{' '}
-                {volunteer.maxTravelMinutes < 90 ? `${volunteer.maxTravelMinutes} min` : 'Any'}
-              </span>
-            </div>
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mt-2">
-              {volunteer.name}&apos;s Volunteering Hub
-            </h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Find shifts matched to your actual schedule, causes, skills, and Singapore travel
-              convenience.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-6 pt-4 lg:pt-0 border-t lg:border-t-0 lg:border-l border-slate-200 lg:pl-8 shrink-0">
+      {normalizedTab === 'discover' ? (
+        <div className="space-y-7">
+          {/* Calm Personalised Greeting */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
-              <p className="text-xs text-slate-500">Completed Hours</p>
-              <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-0.5">
-                {volunteer.hoursLogged}
+              <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                Find a mission that fits your week, {volunteer.name.split(' ')[0]}
+              </h1>
+              <p className="text-sm text-slate-600 mt-1">
+                Showing opportunities near{' '}
+                <strong className="font-semibold text-slate-800">
+                  {volunteer.startingLocation.label}
+                </strong>{' '}
+                that work around your schedule.
               </p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500">Missions Done</p>
-              <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-0.5">
-                {volunteer.shiftsCompleted}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Upcoming Shifts</p>
-              <p className="font-mono-tabular text-2xl font-bold text-teal-700 mt-0.5">
-                {upcomingBookings.length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Unified 5-Tab Volunteer Workspace Navigation */}
-        <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
-            <button
-              type="button"
-              onClick={() => onSelectSubTab('discover')}
-              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSubTab === 'discover'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Discover Missions ({scoredOpportunities.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => onSelectSubTab('calendar')}
-              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSubTab === 'calendar'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              My Calendar
-            </button>
-            <button
-              type="button"
-              onClick={() => onSelectSubTab('route-planner')}
-              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSubTab === 'route-planner'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Plan My Journey
-            </button>
-            <button
-              type="button"
-              onClick={() => onSelectSubTab('my-volunteering')}
-              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSubTab === 'my-volunteering'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              My Volunteering ({upcomingBookings.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => onSelectSubTab('notifications')}
-              className={`px-3.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSubTab === 'notifications'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Notification Settings
-            </button>
-          </div>
-          {missionRanAt && activeSubTab === 'discover' && (
-            <span className="font-mono-tabular text-xs text-teal-700">
-              Last matched at {missionRanAt}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {activeSubTab === 'discover' ? (
-        <div className="space-y-8">
-          {/* SECTION A: FIND MY MISSION (Prominent Matching Form) */}
-          <section
-            aria-label="Find My Mission matching form"
-            className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-              <div>
-                <h2 className="font-display text-lg font-bold text-slate-900">
-                  A. Find My Mission
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Configure causes, skills, Singapore starting location, availability, duration,
-                  and travel-time limit.
-                </p>
-              </div>
+            <div className="flex items-center gap-3 shrink-0">
               <button
                 type="button"
-                onClick={handleFindMyMission}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                onClick={() => onSelectSubTab('profile')}
+                className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
               >
-                <Search className="w-4 h-4" />
-                <span>Find My Mission</span>
+                <User className="w-3.5 h-3.5 text-teal-700" />
+                <span>Edit Profile &amp; Alerts</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectSubTab('my-volunteering')}
+                className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
+              >
+                <CalendarCheck className="w-3.5 h-3.5" />
+                <span>My Missions ({upcomingBookings.length})</span>
               </button>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Column 1: Starting Location & Travel Preferences */}
-              <div className="lg:col-span-4 space-y-4">
-                <div>
-                  <label htmlFor="onemap-postal" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Singapore Postal Code or Starting Location
-                  </label>
-                  <form onSubmit={handleOneMapSearch} className="flex gap-2">
-                    <input
-                      id="onemap-postal"
-                      type="text"
-                      value={postalQuery}
-                      onChange={(e) => setPostalQuery(e.target.value)}
-                      placeholder="e.g. 408600 or Eunos"
-                      className="flex-1 min-w-0 px-3 py-2 text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                    />
+          {/* Question-Led Discovery Filter Card */}
+          <section
+            aria-label="Filter volunteering missions"
+            className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-5"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {/* Question 1: Where can I volunteer? */}
+              <div className="space-y-2">
+                <label htmlFor="onemap-postal" className="block text-xs font-bold text-slate-800">
+                  Where are you starting from?
+                </label>
+                <form onSubmit={handlePlaceSearch} className="flex gap-1.5">
+                  <input
+                    id="onemap-postal"
+                    type="text"
+                    value={postalQuery}
+                    onChange={(e) => setPostalQuery(e.target.value)}
+                    placeholder="Postal code or MRT"
+                    className="flex-1 min-w-0 px-3 min-h-[42px] text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
+                  <button
+                    type="submit"
+                    disabled={searchingPlace}
+                    className="px-3.5 min-h-[42px] text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shrink-0 cursor-pointer disabled:opacity-50"
+                  >
+                    {searchingPlace ? '...' : 'Update'}
+                  </button>
+                </form>
+                {placeSearchError && (
+                  <p className="text-xs text-red-600">{placeSearchError}</p>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_SG_LOCATIONS.map((loc) => (
                     <button
-                      type="submit"
-                      disabled={searchingPlace}
-                      className="px-3 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shrink-0 cursor-pointer disabled:opacity-50"
+                      key={loc.postal}
+                      type="button"
+                      onClick={() => handleSelectStartingPlace(loc, 'demo')}
+                      className={`px-2 py-1 text-[11px] font-medium rounded border cursor-pointer ${
+                        volunteer.startingLocation.postalCode === loc.postal
+                          ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
+                          : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
                     >
-                      {searchingPlace ? '...' : 'Locate'}
+                      {loc.building.split(' ')[0]}
                     </button>
-                  </form>
-                  {placeSearchError && (
-                    <p className="text-xs text-red-600 mt-1">{placeSearchError}</p>
-                  )}
-
-                  {/* Quick SG Presets */}
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {QUICK_SG_LOCATIONS.map((loc) => (
+                  ))}
+                </div>
+                {placeResults.length > 0 && (
+                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-[#FAFAF9]">
+                    {placeResults.slice(0, 4).map((place, idx) => (
                       <button
-                        key={loc.postal}
+                        key={`${place.postal}-${idx}`}
                         type="button"
-                        onClick={() => handleSelectStartingPlace(loc, 'demo')}
-                        className={`px-2 py-1 text-[11px] font-medium rounded border cursor-pointer ${
-                          volunteer.startingLocation.postalCode === loc.postal
-                            ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
-                            : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
-                        }`}
+                        onClick={() =>
+                          handleSelectStartingPlace(place, placeSearchSource ?? 'demo')
+                        }
+                        className="w-full text-left px-3 py-2 hover:bg-teal-50 cursor-pointer"
                       >
-                        {loc.building.split(' ')[0]} ({loc.postal})
+                        <p className="text-xs font-semibold text-slate-900 truncate">
+                          {place.building}
+                        </p>
+                        <p className="text-[11px] text-slate-500 truncate">{place.address}</p>
                       </button>
                     ))}
                   </div>
+                )}
+              </div>
 
-                  {placeResults.length > 0 && (
-                    <div className="mt-2 border border-slate-200 rounded-xl divide-y divide-slate-100 bg-[#FAFAF9]">
-                      <div className="px-3 py-1.5 text-[11px] text-slate-500 flex justify-between">
-                        <span>Select location</span>
-                        <span>{placeSearchSource === 'live' ? 'OneMap Live' : 'Demo SG Data'}</span>
-                      </div>
-                      {placeResults.map((place, idx) => (
-                        <button
-                          key={`${place.postal}-${idx}`}
-                          type="button"
-                          onClick={() =>
-                            handleSelectStartingPlace(place, placeSearchSource ?? 'demo')
-                          }
-                          className="w-full text-left px-3 py-2 hover:bg-teal-50 cursor-pointer"
-                        >
-                          <p className="text-xs font-semibold text-slate-900 truncate">
-                            {place.building}
-                          </p>
-                          <p className="text-[11px] text-slate-500 truncate">{place.address}</p>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
+              {/* Question 2: How far & how will you travel? */}
+              <div className="space-y-2.5">
+                <p className="text-xs font-bold text-slate-800">How far do you want to travel?</p>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label htmlFor="vol-travel-mode" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Transport Mode
+                    <label htmlFor="vol-travel-mode" className="block text-[11px] text-slate-500 mb-1">
+                      Travel by
                     </label>
                     <select
                       id="vol-travel-mode"
@@ -763,7 +709,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                           travelMode: e.target.value as TravelMode,
                         })
                       }
-                      className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      className="w-full px-2.5 min-h-[42px] text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                     >
                       {TRAVEL_MODES.map((m) => (
                         <option key={m.id} value={m.id}>
@@ -773,8 +719,8 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="vol-max-travel" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Max Travel Time
+                    <label htmlFor="vol-max-travel" className="block text-[11px] text-slate-500 mb-1">
+                      Max travel time
                     </label>
                     <select
                       id="vol-max-travel"
@@ -785,20 +731,19 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                           maxTravelMinutes: Number(e.target.value),
                         })
                       }
-                      className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      className="w-full px-2.5 min-h-[42px] text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                     >
-                      <option value={15}>15 minutes</option>
-                      <option value={30}>30 minutes</option>
-                      <option value={45}>45 minutes</option>
-                      <option value={60}>60 minutes</option>
-                      <option value={90}>Any travel time</option>
+                      <option value={15}>Within 15 min</option>
+                      <option value={30}>Within 30 min</option>
+                      <option value={45}>Within 45 min</option>
+                      <option value={60}>Within 60 min</option>
+                      <option value={90}>Anywhere in SG</option>
                     </select>
                   </div>
                 </div>
-
                 <div>
-                  <label htmlFor="vol-duration" className="block text-xs font-semibold text-slate-700 mb-1">
-                    Preferred Volunteering Duration
+                  <label htmlFor="vol-duration" className="block text-[11px] text-slate-500 mb-1">
+                    How much time do you have?
                   </label>
                   <select
                     id="vol-duration"
@@ -809,47 +754,127 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                         preferredDuration: e.target.value as VolunteerProfile['preferredDuration'],
                       })
                     }
-                    className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                    className="w-full px-2.5 min-h-[42px] text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                   >
                     <option value="any">Any duration</option>
-                    <option value="short">Short shift (up to 2.5 hrs)</option>
+                    <option value="short">Short session (up to 2.5 hrs)</option>
                     <option value="medium">Half-day (2.5 – 4 hrs)</option>
-                    <option value="long">Extended shift (4+ hrs)</option>
+                    <option value="long">Longer session (4+ hrs)</option>
                   </select>
                 </div>
               </div>
 
-              {/* Column 2: Causes & Skills */}
-              <div className="lg:col-span-4 space-y-4">
-                <div>
-                  <p className="text-xs font-semibold text-slate-700 mb-2">
-                    Preferred Volunteering Causes
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {ALL_CAUSES.map((cause) => {
-                      const active = volunteer.causes.includes(cause);
-                      return (
-                        <button
-                          key={cause}
-                          type="button"
-                          onClick={() => toggleCause(cause)}
-                          aria-pressed={active}
-                          className={`px-2.5 py-2 text-left text-xs rounded-lg border transition-colors cursor-pointer ${
-                            active
-                              ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
-                              : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
-                          }`}
-                        >
-                          {cause}
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* Question 3: When am I free? */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-800">When are you free?</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {WEEKDAY_WEEKEND_SLOTS.map((slot) => {
+                    const active = volunteer.availability.includes(slot);
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => toggleSlot(slot)}
+                        aria-pressed={active}
+                        className={`px-2 py-1.5 text-left text-[11px] rounded-lg border transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
+                            : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {SLOT_LABELS[slot]}
+                      </button>
+                    );
+                  })}
+                </div>
+                <label className="flex items-center gap-2 pt-1 text-xs font-medium text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={volunteer.availability.includes('public-holiday')}
+                    onChange={() => toggleSlot('public-holiday')}
+                    className="w-4 h-4 accent-teal-700 rounded"
+                  />
+                  <span>Include public holidays</span>
+                </label>
+              </div>
+
+              {/* Question 4: What causes do I care about? */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-800">What causes do you care about?</p>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {ALL_CAUSES.map((cause) => {
+                    const active = volunteer.causes.includes(cause);
+                    return (
+                      <button
+                        key={cause}
+                        type="button"
+                        onClick={() => toggleCause(cause)}
+                        aria-pressed={active}
+                        className={`px-2.5 py-1.5 text-left text-[11px] rounded-lg border transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
+                            : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {cause}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Progressive Disclosure: Search + More Filters (Skills & Commitment Type) */}
+            <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 sm:flex-initial">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search title, area, or charity..."
+                    aria-label="Search missions"
+                    className="pl-8 pr-3 min-h-[40px] w-full sm:w-64 text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  />
                 </div>
 
-                <div>
-                  <p className="text-xs font-semibold text-slate-700 mb-2">
-                    Skills &amp; Interests
+                <button
+                  type="button"
+                  onClick={() => setShowMoreFilters((prev) => !prev)}
+                  aria-expanded={showMoreFilters}
+                  className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-teal-700" />
+                  <span>More filters</span>
+                  {showMoreFilters ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMap((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-teal-700" />
+                  <span>{showMap ? 'Hide Map' : 'Show Map'}</span>
+                </button>
+                <span className="text-xs text-slate-500 font-medium">
+                  {loadingTravel ? 'Updating travel times...' : `${scoredOpportunities.length} missions shown`}
+                </span>
+              </div>
+            </div>
+
+            {showMoreFilters && (
+              <div className="pt-4 border-t border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-5">
+                <div className="md:col-span-8 space-y-2">
+                  <p className="text-xs font-bold text-slate-800">
+                    Skills you&apos;d like to use
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {ALL_SKILLS.map((skill) => {
@@ -860,7 +885,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                           type="button"
                           onClick={() => toggleSkill(skill)}
                           aria-pressed={active}
-                          className={`px-2.5 py-1.5 text-xs rounded-md border transition-colors cursor-pointer ${
+                          className={`px-3 py-1.5 text-xs rounded-lg border transition-colors cursor-pointer ${
                             active
                               ? 'bg-slate-900 border-slate-900 text-white font-semibold'
                               : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
@@ -872,138 +897,31 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                     })}
                   </div>
                 </div>
-              </div>
-
-              {/* Column 3: Availability Calendar & Public Holidays */}
-              <div className="lg:col-span-4 space-y-4">
-                <div>
-                  <p className="text-xs font-semibold text-slate-700 mb-2">
-                    Weekly Availability Calendar
-                  </p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {WEEKDAY_WEEKEND_SLOTS.map((slot) => {
-                      const active = volunteer.availability.includes(slot);
-                      return (
-                        <button
-                          key={slot}
-                          type="button"
-                          onClick={() => toggleSlot(slot)}
-                          aria-pressed={active}
-                          className={`px-2.5 py-2 text-left text-xs rounded-lg border transition-colors cursor-pointer ${
-                            active
-                              ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
-                              : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
-                          }`}
-                        >
-                          {SLOT_LABELS[slot]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Official Public Holiday Checkbox + Calendar Highlights */}
-                <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-3.5 space-y-2.5">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-900 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={volunteer.availability.includes('public-holiday')}
-                      onChange={() => toggleSlot('public-holiday')}
-                      className="w-4 h-4 accent-teal-700 rounded"
-                    />
-                    <span>I&apos;m available on public holidays</span>
-                  </label>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200">
-                    <span>Upcoming SG Holidays</span>
-                    <span>
-                      {holidaysSource === 'live'
-                        ? dataGovAuthMode === 'optional-key-configured'
-                          ? 'data.gov.sg Live (API Key)'
-                          : 'data.gov.sg Live (Keyless)'
-                        : holidaysRateLimited
-                        ? 'Rate Limited · Fallback Active'
-                        : 'Fallback MOM Dataset'}
-                    </span>
-                  </div>
-                  <div className="space-y-1 max-h-28 overflow-y-auto">
-                    {upcomingHolidays.map((h) => (
-                      <div
-                        key={`${h.date}-${h.holiday}`}
-                        className="flex items-center justify-between text-xs py-0.5"
+                <div className="md:col-span-4 space-y-2">
+                  <p className="text-xs font-bold text-slate-800">Commitment type</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['all', 'One-time', 'Recurring'] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setCommitmentFilter(type)}
+                        className={`px-2.5 min-h-[38px] text-xs font-semibold rounded-lg border cursor-pointer ${
+                          commitmentFilter === type
+                            ? 'bg-teal-700 border-teal-700 text-white'
+                            : 'bg-[#FAFAF9] border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}
                       >
-                        <span className="font-medium text-teal-900 truncate pr-2">{h.holiday}</span>
-                        <span className="font-mono-tabular text-[11px] text-slate-500 shrink-0">
-                          {h.date} ({h.day.slice(0, 3)})
-                        </span>
-                      </div>
+                        {type === 'all' ? 'Any' : type}
+                      </button>
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </section>
 
-          {/* SECTION B: RECOMMENDED MISSIONS + MAP + LONG WEEKEND DISCOVERY */}
-          <div ref={recommendedRef} className="space-y-5">
-            {/* Long Weekend Volunteering Discovery Strip */}
-            {longWeekendHolidays.length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold text-teal-700">
-                    Long Weekend Volunteering Discovery
-                  </p>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5">
-                    Official public holidays forming upcoming long weekends:{' '}
-                    {longWeekendHolidays
-                      .slice(0, 3)
-                      .map((h) => `${h.holiday} (${h.date})`)
-                      .join(' · ')}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFitFilter('holiday')}
-                  className="px-4 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  Explore Long Weekend Shifts
-                </button>
-              </div>
-            )}
-
-            {/* Live Weather Status Strip */}
-            <div className="bg-white border border-slate-200 rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-slate-700">
-                <Sun className="w-4 h-4 text-amber-600 shrink-0" />
-                {weather.source === 'live' ? (
-                  <span>
-                    <strong>
-                      NEA Weather Outlook (
-                      {weather.supportedRange
-                        ? `${weather.supportedRange.startDate} to ${weather.supportedRange.endDate}`
-                        : '24-Hour Live'}
-                      ):
-                    </strong>{' '}
-                    {weather.twentyFourHourSummary ?? '4-day forecast active for outdoor shifts.'}
-                  </span>
-                ) : (
-                  <span>
-                    <strong>NEA Weather Outlook:</strong>{' '}
-                    {weather.rateLimited
-                      ? 'data.gov.sg rate limit reached; future dates show "Forecast not yet available".'
-                      : 'Live 4-day forecast currently unavailable; future dates show "Forecast not yet available".'}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowMap((prev) => !prev)}
-                className="text-xs font-semibold text-teal-700 hover:text-teal-800 whitespace-nowrap cursor-pointer"
-              >
-                {showMap ? 'Hide Map' : 'Show OneMap View'}
-              </button>
-            </div>
-
+          {/* Optional Map & Weather / Long-Weekend Context */}
+          <div ref={recommendedRef} className="space-y-4">
             {showMap && (
               <OneMapExplorer
                 startingLocation={volunteer.startingLocation}
@@ -1014,82 +932,69 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
               />
             )}
 
-            {/* Recommended Missions Filter Bar */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setFitFilter('all')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer ${
-                    fitFilter === 'all'
-                      ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  All Ranked ({scoredOpportunities.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFitFilter('available')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer ${
-                    fitFilter === 'available'
-                      ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Fits My Availability
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFitFilter('rescue')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer ${
-                    fitFilter === 'rescue'
-                      ? 'bg-white text-amber-800 shadow-sm font-semibold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Rescue a Shift
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFitFilter('holiday')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer ${
-                    fitFilter === 'holiday'
-                      ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Public Holidays
-                </button>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-3.5 text-xs">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex items-center gap-1.5 text-slate-700">
+                  <Sun className="w-4 h-4 text-amber-600 shrink-0" />
+                  {weather.source === 'live' ? (
+                    <span>
+                      <strong>Weather outlook:</strong>{' '}
+                      {weather.twentyFourHourSummary ?? 'Forecast active for outdoor missions.'}
+                    </span>
+                  ) : (
+                    <span>
+                      <strong>Outdoor missions:</strong> Weather outlook is shown when available within
+                      the 4-day window.
+                    </span>
+                  )}
+                </div>
+                {longWeekendHolidays.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFitFilter((prev) => (prev === 'holiday' ? 'all' : 'holiday'))
+                    }
+                    className="text-xs font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2 cursor-pointer"
+                  >
+                    Upcoming holiday: {longWeekendHolidays[0].holiday} ({longWeekendHolidays[0].date})
+                  </button>
+                )}
               </div>
 
-              <div className="flex items-center gap-3">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Keyword filter..."
-                  aria-label="Filter recommended missions"
-                  className="px-3 py-1.5 text-xs bg-[#FAFAF9] border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <span className="font-mono-tabular text-xs text-slate-500 whitespace-nowrap">
-                  {loadingTravel
-                    ? 'Calculating...'
-                    : travelSource === 'live'
-                    ? 'OneMap Routing Live'
-                    : 'Distance Convenience Active'}
-                </span>
+              {/* Clean Quick-Filter Segmented Bar */}
+              <div className="inline-flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg shrink-0">
+                {(
+                  [
+                    { id: 'all', label: `All (${scoredOpportunities.length})` },
+                    { id: 'available', label: 'Fits My Schedule' },
+                    { id: 'urgent', label: 'Needs Volunteers Soon' },
+                    { id: 'holiday', label: 'Public Holidays' },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setFitFilter(item.id)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer ${
+                      fitFilter === item.id
+                        ? 'bg-white text-slate-900 shadow-sm font-semibold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Recommended Mission Cards */}
+            {/* Clean Mission Cards */}
             {scoredOpportunities.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center">
                 <p className="font-display text-base font-bold text-slate-900">
-                  No missions match your current travel limit or filters
+                  No missions match these filters right now
                 </p>
                 <p className="text-sm text-slate-500 mt-1">
-                  Increase your maximum travel time or reset filters to view all 12 Singapore
+                  Try widening your travel time or resetting your filters to see all available
                   opportunities.
                 </p>
                 <button
@@ -1097,15 +1002,16 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                   onClick={() => {
                     setSearchQuery('');
                     setFitFilter('all');
+                    setCommitmentFilter('all');
                     onUpdateVolunteer({
                       ...volunteer,
                       maxTravelMinutes: 90,
                       preferredDuration: 'any',
                     });
                   }}
-                  className="mt-4 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+                  className="mt-4 px-5 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
                 >
-                  Show All Opportunities
+                  Reset Filters
                 </button>
               </div>
             ) : (
@@ -1127,8 +1033,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                       )
                     : [];
                   const hasOverlapConflict = conflicts.some((c) => c.type === 'overlap');
-                  const hasTightConflict =
-                    !hasOverlapConflict && conflicts.some((c) => c.type === 'tight-transition');
+                  const commitmentLabel = opportunity.commitmentType ?? 'One-time';
 
                   return (
                     <article
@@ -1139,41 +1044,36 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                           : 'border-slate-200 hover:border-slate-300'
                       }`}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                             <span className="font-semibold text-slate-800">
                               {opportunity.charityName}
                             </span>
-                            <span aria-hidden="true">·</span>
-                            <span>{opportunity.cause}</span>
-                            <span aria-hidden="true">·</span>
                             {opportunity.charityVerificationStatus ===
                             'Authoritatively Verified' ? (
-                              <span className="inline-flex items-center gap-1 font-medium text-teal-700">
+                              <span
+                                title={`Verified Charity (UEN ${opportunity.charityUen})`}
+                                className="inline-flex items-center gap-1 font-medium text-teal-700"
+                              >
                                 <ShieldCheck className="w-3.5 h-3.5" />
-                                Verified UEN {opportunity.charityUen}
+                                <span>Verified</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 font-medium text-amber-700">
                                 <ShieldAlert className="w-3.5 h-3.5" />
-                                {opportunity.charityVerificationStatus}
+                                <span>{opportunity.charityVerificationStatus}</span>
                               </span>
                             )}
-                            <a
-                              href="https://www.charities.gov.sg"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 text-slate-500 hover:text-teal-700 underline underline-offset-2"
-                            >
-                              <span>Charity Portal</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
+                            <span aria-hidden="true">·</span>
+                            <span>{opportunity.cause}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{commitmentLabel}</span>
                             {opportunity.urgency === 'Urgent Fill' && (
                               <>
                                 <span aria-hidden="true">·</span>
                                 <span className="font-semibold text-amber-700">
-                                  Needs Replacement
+                                  Spot open urgently
                                 </span>
                               </>
                             )}
@@ -1181,47 +1081,62 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                               <>
                                 <span aria-hidden="true">·</span>
                                 <span className="font-semibold text-teal-700">
-                                  Public Holiday: {holidayHit.holiday}
+                                  {holidayHit.holiday}
                                 </span>
                               </>
                             )}
                           </div>
-                          <h3 className="font-display text-lg font-bold text-slate-900 mt-1.5">
+                          <h3 className="font-display text-lg sm:text-xl font-bold text-slate-900 mt-1.5">
                             {opportunity.title}
                           </h3>
                         </div>
 
                         <div className="sm:text-right shrink-0">
-                          <p className="font-mono-tabular text-lg font-bold text-teal-700">
-                            {match.score}% match
-                          </p>
-                          <p className="font-mono-tabular text-xs text-slate-500">
+                          <p
+                            className={`font-mono-tabular text-xs font-semibold ${
+                              spotsLeft > 0 ? 'text-teal-700' : 'text-slate-500'
+                            }`}
+                          >
                             {spotsLeft > 0
-                              ? `${spotsLeft} of ${opportunity.spotsTotal} volunteers needed`
-                              : `Full (${opportunity.spotsFilled}/${opportunity.spotsTotal})`}
+                              ? `${spotsLeft} spot${spotsLeft === 1 ? '' : 's'} left`
+                              : 'Waitlist open'}
                           </p>
+                          <a
+                            href="https://www.charities.gov.sg"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 text-[11px] text-slate-500 hover:text-teal-700 underline underline-offset-2 mt-1"
+                          >
+                            <span>Charity Registry</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
                       </div>
 
-                      <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+                      <p className="mt-2.5 text-sm text-slate-600 leading-relaxed">
                         {opportunity.description}
                       </p>
 
-                      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600">
+                      {/* Essential Facts Row */}
+                      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-700">
                         <span className="inline-flex items-center gap-1.5">
                           <Clock className="w-3.5 h-3.5 text-slate-400" />
-                          {opportunity.dateLabel} · {opportunity.timeLabel} (
-                          {opportunity.durationHours}h)
+                          <span>
+                            {opportunity.dateLabel} · {opportunity.timeLabel} (
+                            {opportunity.durationHours}h)
+                          </span>
                         </span>
                         <span className="inline-flex items-center gap-1.5">
                           <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                          {opportunity.location}, S{opportunity.postalCode} ({opportunity.district})
+                          <span>
+                            {opportunity.location} (S{opportunity.postalCode})
+                          </span>
                         </span>
                         <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
                           <Navigation className="w-3.5 h-3.5 text-teal-700" />
                           {travel?.minutes !== null && travel?.minutes !== undefined ? (
-                            <span className="font-mono-tabular">
-                              {travel.minutes} min ({travel.distanceKm} km via OneMap)
+                            <span>
+                              About {travel.minutes} min away ({travel.distanceKm} km)
                             </span>
                           ) : (
                             <span>
@@ -1232,129 +1147,91 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                         </span>
                       </div>
 
-                      {/* Compatibility & Conflict Status Strip */}
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                        <span className={match.travelMatch ? 'text-teal-700 font-medium' : 'text-amber-700 font-medium'}>
-                          {match.travelMatch
-                            ? `Transport compatible (${volunteer.travelMode.toUpperCase()})`
-                            : 'Longer commute'}
-                        </span>
-                        <span aria-hidden="true" className="text-slate-300">·</span>
-                        <span className={match.availabilityMatch ? 'text-teal-700 font-medium' : 'text-slate-500'}>
-                          {match.availabilityMatch ? 'Fits availability' : 'Outside selected slots'}
-                        </span>
-                        <span aria-hidden="true" className="text-slate-300">·</span>
-                        {hasOverlapConflict ? (
-                          <span className="font-semibold text-red-600">
-                            Conflict: Overlaps existing booking
-                          </span>
-                        ) : hasTightConflict ? (
-                          <span className="font-semibold text-amber-700">
-                            Tight same-day transit window
-                          </span>
-                        ) : (
-                          <span className="text-teal-700 font-medium">No schedule conflict</span>
-                        )}
-                      </div>
-
-                      {/* Outdoor Weather Forecast + Wet-Weather Reminder (No Fabrication) */}
+                      {/* Outdoor Weather Note if in range */}
                       {opportunity.isOutdoor && (
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="mt-3 text-xs">
                           {dayForecast ? (
                             dayForecast.disruptionRisk ? (
-                              <span className="inline-flex items-center gap-1.5 font-semibold text-amber-800">
+                              <span className="inline-flex items-center gap-1.5 font-medium text-amber-800">
                                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                Potential rain disruption ({dayForecast.date}):{' '}
-                                {dayForecast.forecast}
+                                Rain possible on {dayForecast.date}: {dayForecast.forecast}
                                 {dayForecast.tempLow !== null && dayForecast.tempHigh !== null
                                   ? ` · ${dayForecast.tempLow}–${dayForecast.tempHigh}°C`
                                   : ''}
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1.5 text-slate-700">
+                              <span className="inline-flex items-center gap-1.5 text-slate-600">
                                 <CloudRain className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-                                NEA Forecast ({dayForecast.date}): {dayForecast.forecast}
-                                {dayForecast.tempLow !== null && dayForecast.tempHigh !== null
-                                  ? ` · ${dayForecast.tempLow}–${dayForecast.tempHigh}°C`
-                                  : ''}
+                                Weather ({dayForecast.date}): {dayForecast.forecast}
                               </span>
                             )
                           ) : (
                             <span className="text-slate-500">
-                              Outdoor shift ({opportunity.isoDate}): Forecast not yet available.
+                              Outdoor mission · Weather forecast not yet available for this date
                             </span>
                           )}
-                          <span className="text-slate-500">
-                            Reminder: Check the charity&apos;s wet-weather arrangements.
-                          </span>
                         </div>
                       )}
 
+                      {/* Plain-Language Fit Note + Single Clear Primary Action */}
                       <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <p className="text-xs text-slate-500">
-                          {match.reasons.length > 0
-                            ? `Reason for match: ${match.reasons.join(' · ')}`
-                            : 'Outside selected availability slots'}
+                          {hasOverlapConflict ? (
+                            <span className="font-semibold text-red-700">
+                              Overlaps with another shift in your schedule
+                            </span>
+                          ) : match.reasons.length > 0 ? (
+                            match.reasons.slice(0, 3).join(' · ')
+                          ) : (
+                            'Open to volunteers'
+                          )}
                         </p>
 
                         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                           <button
                             type="button"
                             onClick={() => onOpenRoutePlanner(opportunity.id)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-200 hover:border-slate-300 rounded-lg cursor-pointer"
+                            className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg cursor-pointer"
                           >
                             <Navigation className="w-3.5 h-3.5 text-teal-700" />
-                            <span>Plan Journey</span>
+                            <span>View Route</span>
                           </button>
 
                           {existingBooking ? (
-                            <div className="inline-flex flex-wrap items-center gap-2.5">
+                            <div className="inline-flex flex-wrap items-center gap-2">
                               <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700">
                                 <CheckCircle2 className="w-4 h-4" />
                                 {existingBooking.status === 'Present'
-                                  ? 'Completed & Verified'
+                                  ? 'Completed'
                                   : `Registered (${existingBooking.status})`}
                               </span>
                               {existingBooking.status === 'Confirmed' && (
                                 <button
                                   type="button"
                                   onClick={() => handleDownloadIcs(opportunity)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
                                 >
                                   <Calendar className="w-3.5 h-3.5" />
-                                  <span>Download .ics</span>
-                                </button>
-                              )}
-                              {existingBooking.status !== 'Present' && (
-                                <button
-                                  type="button"
-                                  onClick={() => onCancelBooking(existingBooking.id)}
-                                  className="px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
-                                >
-                                  Cancel
+                                  <span>Add to Calendar</span>
                                 </button>
                               )}
                             </div>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleAttemptBookShift(opportunity)}
-                              className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                              onClick={() => handleOpenRegistrationModal(opportunity)}
+                              className={`inline-flex items-center justify-center gap-1.5 px-5 min-h-[42px] text-xs font-semibold text-white rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                                 hasOverlapConflict
                                   ? 'bg-red-700 hover:bg-red-800'
-                                  : opportunity.urgency === 'Urgent Fill'
-                                  ? 'bg-amber-600 hover:bg-amber-700'
                                   : 'bg-teal-700 hover:bg-teal-800'
                               }`}
                             >
                               <CalendarCheck className="w-3.5 h-3.5" />
                               <span>
                                 {hasOverlapConflict
-                                  ? 'Schedule Conflict'
+                                  ? 'Check Conflict'
                                   : spotsLeft === 0
                                   ? 'Join Waitlist'
-                                  : opportunity.urgency === 'Urgent Fill'
-                                  ? 'Rescue & Register'
                                   : 'Register'}
                               </span>
                             </button>
@@ -1368,7 +1245,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
             )}
           </div>
         </div>
-      ) : activeSubTab === 'calendar' ? (
+      ) : normalizedTab === 'calendar' ? (
         <MissionCalendarView
           volunteer={volunteer}
           opportunities={opportunities}
@@ -1379,17 +1256,15 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           availabilityOverrides={availabilityOverrides}
           onUpdateAvailabilityOverride={onUpdateAvailabilityOverride}
           onUpdateVolunteer={onUpdateVolunteer}
-          onBookShift={(oppId) => {
-            const opp = opportunities.find((o) => o.id === oppId);
-            if (opp) handleAttemptBookShift(opp);
-          }}
+          onBookShift={onBookShift}
+          onSelectOpportunityToRegister={handleOpenRegistrationModal}
           onCancelBooking={onCancelBooking}
           onConfirmAttendance={onConfirmAttendanceByBookingId}
           onPlanJourney={onOpenRoutePlanner}
           onRespondInvitation={onRespondInvitation}
           onNotify={onNotify}
         />
-      ) : activeSubTab === 'route-planner' ? (
+      ) : normalizedTab === 'route-planner' ? (
         <RoutePlannerView
           volunteer={volunteer}
           opportunities={opportunities}
@@ -1407,31 +1282,270 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           onOpenCalendar={() => onSelectSubTab('calendar')}
           onNotify={onNotify}
         />
-      ) : activeSubTab === 'notifications' ? (
-        <NotificationSettingsView
-          volunteer={volunteer}
-          opportunities={opportunities}
-          bookings={bookings}
-          travelTimes={travelTimes}
-          preferences={notificationPreferences}
-          notificationLog={notificationLog}
-          onUpdatePreferences={onUpdateNotificationPreferences}
-          onSimulateReminder={onSimulateReminder}
-          onViewMission={() => onSelectSubTab('calendar')}
-          onPlanJourney={onOpenRoutePlanner}
-          onConfirmAttendance={onConfirmAttendanceByOppId}
-        />
+      ) : normalizedTab === 'profile' ? (
+        <div className="space-y-8">
+          {/* Profile Header & Optional Persona Switch */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1 font-semibold text-teal-700">
+                  <ShieldCheck className="w-4 h-4" />
+                  Singpass {volunteer.singpassTier}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Starting from {volunteer.startingLocation.label} (S
+                  {volunteer.startingLocation.postalCode})
+                </span>
+              </div>
+              <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mt-1.5">
+                {volunteer.name}
+              </h1>
+              <p className="text-sm text-slate-600 mt-1">
+                Keep your starting address, travel preferences, causes, and reminder settings up to
+                date.
+              </p>
+            </div>
+
+            {allVolunteers && allVolunteers.length > 1 && onSelectVolunteer && (
+              <div className="shrink-0">
+                <label
+                  htmlFor="switch-volunteer-profile"
+                  className="block text-xs font-semibold text-slate-600 mb-1"
+                >
+                  Active Volunteer Profile
+                </label>
+                <select
+                  id="switch-volunteer-profile"
+                  value={volunteer.id}
+                  onChange={(e) => onSelectVolunteer(e.target.value)}
+                  className="px-3.5 min-h-[42px] text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                >
+                  {allVolunteers.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.district})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Profile Settings Form */}
+          <section className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6">
+            <h2 className="font-display text-lg font-bold text-slate-900 border-b border-slate-100 pb-3">
+              Volunteering Preferences &amp; Availability
+            </h2>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="prof-postal" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Preferred Starting Postal Code or Location
+                  </label>
+                  <form onSubmit={handlePlaceSearch} className="flex gap-2">
+                    <input
+                      id="prof-postal"
+                      type="text"
+                      value={postalQuery}
+                      onChange={(e) => setPostalQuery(e.target.value)}
+                      className="flex-1 min-w-0 px-3 min-h-[42px] text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg"
+                    />
+                    <button
+                      type="submit"
+                      disabled={searchingPlace}
+                      className="px-3.5 min-h-[42px] text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg cursor-pointer"
+                    >
+                      Locate
+                    </button>
+                  </form>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {QUICK_SG_LOCATIONS.map((loc) => (
+                      <button
+                        key={loc.postal}
+                        type="button"
+                        onClick={() => handleSelectStartingPlace(loc, 'demo')}
+                        className={`px-2.5 py-1 text-[11px] rounded border cursor-pointer ${
+                          volunteer.startingLocation.postalCode === loc.postal
+                            ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
+                            : 'bg-[#FAFAF9] border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {loc.building.split(' ')[0]} ({loc.postal})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="prof-mode" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Transport Mode
+                    </label>
+                    <select
+                      id="prof-mode"
+                      value={volunteer.travelMode}
+                      onChange={(e) =>
+                        onUpdateVolunteer({
+                          ...volunteer,
+                          travelMode: e.target.value as TravelMode,
+                        })
+                      }
+                      className="w-full px-2.5 min-h-[42px] text-xs bg-white border border-slate-300 rounded-lg"
+                    >
+                      {TRAVEL_MODES.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="prof-max" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Max Travel Time
+                    </label>
+                    <select
+                      id="prof-max"
+                      value={volunteer.maxTravelMinutes}
+                      onChange={(e) =>
+                        onUpdateVolunteer({
+                          ...volunteer,
+                          maxTravelMinutes: Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-2.5 min-h-[42px] text-xs bg-white border border-slate-300 rounded-lg"
+                    >
+                      <option value={15}>15 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={45}>45 minutes</option>
+                      <option value={60}>60 minutes</option>
+                      <option value={90}>Any travel time</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-slate-700">Causes You Care About</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {ALL_CAUSES.map((cause) => {
+                    const active = volunteer.causes.includes(cause);
+                    return (
+                      <button
+                        key={cause}
+                        type="button"
+                        onClick={() => toggleCause(cause)}
+                        className={`px-2.5 py-2 text-left text-xs rounded-lg border cursor-pointer ${
+                          active
+                            ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
+                            : 'bg-[#FAFAF9] border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {cause}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs font-semibold text-slate-700 pt-1">Your Skills</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_SKILLS.map((skill) => {
+                    const active = volunteer.skills.includes(skill);
+                    return (
+                      <button
+                        key={skill}
+                        type="button"
+                        onClick={() => toggleSkill(skill)}
+                        className={`px-2.5 py-1.5 text-xs rounded-md border cursor-pointer ${
+                          active
+                            ? 'bg-slate-900 border-slate-900 text-white font-semibold'
+                            : 'bg-white border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {skill}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-slate-700">Weekly Free Time</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {WEEKDAY_WEEKEND_SLOTS.map((slot) => {
+                    const active = volunteer.availability.includes(slot);
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => toggleSlot(slot)}
+                        className={`px-2.5 py-2 text-left text-xs rounded-lg border cursor-pointer ${
+                          active
+                            ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
+                            : 'bg-[#FAFAF9] border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {SLOT_LABELS[slot]}
+                      </button>
+                    );
+                  })}
+                </div>
+                <label className="flex items-center gap-2 pt-1 text-xs font-semibold text-slate-900 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={volunteer.availability.includes('public-holiday')}
+                    onChange={() => toggleSlot('public-holiday')}
+                    className="w-4 h-4 accent-teal-700 rounded"
+                  />
+                  <span>Available on Singapore public holidays</span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          {/* Nested Reminders & Notification Settings */}
+          <NotificationSettingsView
+            volunteer={volunteer}
+            opportunities={opportunities}
+            bookings={bookings}
+            travelTimes={travelTimes}
+            preferences={notificationPreferences}
+            notificationLog={notificationLog}
+            onUpdatePreferences={onUpdateNotificationPreferences}
+            onSimulateReminder={onSimulateReminder}
+            onViewMission={() => onSelectSubTab('my-volunteering')}
+            onPlanJourney={onOpenRoutePlanner}
+            onConfirmAttendance={onConfirmAttendanceByOppId}
+          />
+        </div>
       ) : (
-        /* SECTION C: MY VOLUNTEERING */
+        /* TAB: MY MISSIONS (my-volunteering) */
         <section className="space-y-6">
-          {/* Summary Stats */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                My Missions
+              </h1>
+              <p className="text-sm text-slate-600 mt-1">
+                Track your upcoming commitments, plan how to get there, and review completed hours.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onSelectSubTab('discover')}
+              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shrink-0 cursor-pointer"
+            >
+              <span>Find Another Mission</span>
+            </button>
+          </div>
+
+          {/* Contributions Summary */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-5">
-              <p className="text-xs text-slate-500">Completed Volunteering Hours</p>
+              <p className="text-xs text-slate-500">Hours Contributed</p>
               <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">
                 {volunteer.hoursLogged} hrs
               </p>
-              <p className="text-xs text-slate-500 mt-1">Verified volunteering history</p>
+              <p className="text-xs text-slate-500 mt-1">Verified across partner charities</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl p-5">
               <p className="text-xs text-slate-500">Missions Completed</p>
@@ -1439,7 +1553,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                 {volunteer.shiftsCompleted}
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                {completedBookings.length} logged in current session
+                {completedBookings.length} completed this session
               </p>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl p-5">
@@ -1452,109 +1566,141 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
             </div>
           </div>
 
-          {/* Calendar Integration Honesty Note */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600">
-            <div>
-              <p className="font-semibold text-slate-900">Calendar Export &amp; Reminder Shortcuts</p>
-              <p className="mt-0.5">
-                Direct Google Calendar sync is not enabled (OAuth not configured). Use{' '}
-                <strong>Download .ics</strong> on any confirmed commitment or manage shifts inside{' '}
-                <strong>My Calendar</strong>.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onSelectSubTab('notifications')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Notification Settings</span>
-            </button>
-          </div>
-
-          {/* Upcoming Commitments */}
+          {/* Upcoming Missions with Embedded "Getting There" Info */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <h2 className="font-display text-lg font-bold text-slate-900 pb-3 border-b border-slate-100">
-              Upcoming Commitments ({upcomingBookings.length})
+              Upcoming Missions ({upcomingBookings.length})
             </h2>
             {upcomingBookings.length === 0 ? (
               <div className="py-8 text-center">
                 <p className="text-sm text-slate-600">
-                  You have no upcoming volunteer shifts booked yet.
+                  You don&apos;t have any upcoming missions yet.
                 </p>
                 <button
                   type="button"
                   onClick={() => onSelectSubTab('discover')}
-                  className="mt-3 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+                  className="mt-3 px-5 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
                 >
-                  Browse Recommended Missions
+                  Discover Missions
                 </button>
               </div>
             ) : (
-              <div className="mt-3 divide-y divide-slate-100">
+              <div className="mt-4 space-y-4">
                 {upcomingBookings.map((booking) => {
                   const opp = opportunities.find((o) => o.id === booking.opportunityId);
                   if (!opp) return null;
+                  const travel = travelTimes[opp.id];
+                  const suggestedLeave =
+                    travel?.minutes != null
+                      ? calculateSuggestedDeparture(
+                          opp.startTime24,
+                          travel.minutes,
+                          notificationPreferences.departureBufferMinutes
+                        )
+                      : null;
+
                   return (
                     <div
                       key={booking.id}
-                      className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      className="border border-slate-200 rounded-2xl p-5 space-y-4"
                     >
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span className="font-semibold text-teal-700">{booking.status}</span>
-                          {booking.attendanceConfirmed && (
-                            <>
-                              <span aria-hidden="true">·</span>
-                              <span className="font-semibold text-teal-800">
-                                Attendance Confirmed ({booking.attendanceConfirmedAt ?? 'Ready'})
-                              </span>
-                            </>
-                          )}
-                          <span aria-hidden="true">·</span>
-                          <span>{opp.charityName}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span className="font-semibold text-teal-700">{booking.status}</span>
+                            {booking.attendanceConfirmed && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-semibold text-teal-800">
+                                  Attendance Confirmed ({booking.attendanceConfirmedAt ?? 'Ready'})
+                                </span>
+                              </>
+                            )}
+                            <span aria-hidden="true">·</span>
+                            <span>{opp.charityName}</span>
+                          </div>
+                          <p className="font-display text-lg font-bold text-slate-900 mt-1">
+                            {opp.title}
+                          </p>
+                          <p className="text-xs text-slate-600 mt-1">
+                            {opp.dateLabel} · {opp.timeLabel}
+                          </p>
                         </div>
-                        <p className="text-base font-bold text-slate-900 mt-0.5">{opp.title}</p>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {opp.dateLabel} · {opp.timeLabel} · {opp.location} (S{opp.postalCode})
-                        </p>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          {booking.status === 'Confirmed' && !booking.attendanceConfirmed && (
+                            <button
+                              type="button"
+                              onClick={() => onConfirmAttendanceByBookingId(booking.id)}
+                              className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-slate-900 bg-amber-100 hover:bg-amber-200 rounded-lg cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Confirm Attendance</span>
+                            </button>
+                          )}
+                          {booking.status === 'Confirmed' && (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadIcs(opp)}
+                              className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
+                            >
+                              <Calendar className="w-3.5 h-3.5" />
+                              <span>Add to Calendar (.ics)</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onCancelBooking(booking.id)}
+                            className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg cursor-pointer"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Cancel</span>
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+
+                      {/* Friendly "Getting there" Sub-Card */}
+                      <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs flex-1">
+                          <div>
+                            <p className="text-slate-500">Location</p>
+                            <p className="font-semibold text-slate-900 mt-0.5">
+                              {opp.location} (S{opp.postalCode})
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500">Estimated travel time</p>
+                            <p className="font-semibold text-slate-900 mt-0.5">
+                              {travel?.minutes != null
+                                ? `About ${travel.minutes} mins (${travel.distanceKm} km)`
+                                : travel?.distanceKm != null
+                                ? `Unavailable · ${travel.distanceKm} km away`
+                                : 'Check route planner'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500">Preferred transport</p>
+                            <p className="font-semibold text-slate-900 mt-0.5">
+                              {travelModeReadable(volunteer.travelMode)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500">Suggested departure</p>
+                            <p className="font-semibold text-teal-800 mt-0.5">
+                              {suggestedLeave
+                                ? `${suggestedLeave.departureTime12} (${notificationPreferences.departureBufferMinutes}-min buffer)`
+                                : 'Open View Route to check'}
+                            </p>
+                          </div>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => onOpenRoutePlanner(opp.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg cursor-pointer"
+                          className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[40px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shrink-0 cursor-pointer"
                         >
-                          <Navigation className="w-3.5 h-3.5 text-teal-700" />
-                          <span>Plan My Journey</span>
-                        </button>
-                        {booking.status === 'Confirmed' && !booking.attendanceConfirmed && (
-                          <button
-                            type="button"
-                            onClick={() => onConfirmAttendanceByBookingId(booking.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-900 bg-amber-100 hover:bg-amber-200 rounded-lg cursor-pointer"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Confirm Attendance</span>
-                          </button>
-                        )}
-                        {booking.status === 'Confirmed' && (
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadIcs(opp)}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
-                          >
-                            <Calendar className="w-3.5 h-3.5" />
-                            <span>Download .ics</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => onCancelBooking(booking.id)}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-red-700 bg-white border border-red-200 hover:bg-red-50 rounded-lg cursor-pointer"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>Cancel Shift</span>
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>View Route</span>
                         </button>
                       </div>
                     </div>
@@ -1566,110 +1712,237 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         </section>
       )}
 
-      {/* Scheduling Conflict Detection Modal */}
-      {conflictModal && (
+      {/* Unified 3-Step Registration & Friendly Confirmation Modal */}
+      {registrationModal && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-[2px] flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="conflict-modal-title"
+          aria-labelledby="reg-modal-title"
         >
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2 text-amber-800">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                <h3 id="conflict-modal-title" className="font-display text-lg font-bold text-slate-900">
-                  {conflictModal.conflicts.some((c) => c.type === 'overlap')
-                    ? 'Scheduling Conflict Detected'
-                    : 'Tight Inter-Shift Transit Warning'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setConflictModal(null)}
-                aria-label="Close conflict dialog"
-                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 text-xs space-y-1.5">
-              <p className="font-semibold text-slate-900">
-                Selected Shift: {conflictModal.candidateOpp.title} (
-                {conflictModal.candidateOpp.dateLabel} · {conflictModal.candidateOpp.timeLabel})
-              </p>
-              {conflictModal.conflicts.map((c) => (
-                <p key={c.booking.id} className="text-red-700 font-medium">
-                  {c.message}
-                </p>
-              ))}
-            </div>
-
-            {/* Conflict-Free Alternative Suggestions */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-700">
-                Suggested Conflict-Free Alternatives
-              </p>
-              <div className="space-y-1.5">
-                {suggestConflictAlternatives(
-                  conflictModal.candidateOpp,
-                  volunteer,
-                  opportunities,
-                  travelTimes,
-                  holidays,
-                  bookings
-                ).map(({ opportunity: alt, score }) => (
-                  <div
-                    key={alt.id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white text-xs"
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 sm:p-7 space-y-5 shadow-xl max-h-[90vh] overflow-y-auto">
+            {registrationModal.step === 'review' ? (
+              <>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold text-teal-700">
+                      Confirm Your Mission
+                    </p>
+                    <h3
+                      id="reg-modal-title"
+                      className="font-display text-xl font-bold text-slate-900 mt-0.5"
+                    >
+                      {registrationModal.opportunity.title}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {registrationModal.opportunity.charityName} ·{' '}
+                      {registrationModal.opportunity.cause}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationModal(null)}
+                    aria-label="Close registration modal"
+                    className="p-2 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
                   >
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-900 truncate">{alt.title}</p>
-                      <p className="text-slate-500 mt-0.5 font-mono-tabular">
-                        {alt.dateLabel} · {alt.timeLabel} · {score}% match
-                      </p>
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Essential Details Summary */}
+                <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 space-y-2.5 text-xs">
+                  <p className="flex items-center gap-2 text-slate-800 font-medium">
+                    <Clock className="w-4 h-4 text-teal-700 shrink-0" />
+                    <span>
+                      {registrationModal.opportunity.dateLabel} ·{' '}
+                      {registrationModal.opportunity.timeLabel} (
+                      {registrationModal.opportunity.durationHours} hours)
+                    </span>
+                  </p>
+                  <p className="flex items-center gap-2 text-slate-800 font-medium">
+                    <MapPin className="w-4 h-4 text-teal-700 shrink-0" />
+                    <span>
+                      {registrationModal.opportunity.location} (S
+                      {registrationModal.opportunity.postalCode})
+                    </span>
+                  </p>
+                  <p className="flex items-center gap-2 text-slate-700">
+                    <Navigation className="w-4 h-4 text-teal-700 shrink-0" />
+                    <span>
+                      {registrationModal.travel?.minutes != null
+                        ? `About ${registrationModal.travel.minutes} mins by ${travelModeReadable(
+                            volunteer.travelMode
+                          ).toLowerCase()} (${registrationModal.travel.distanceKm} km)`
+                        : registrationModal.travel?.distanceKm != null
+                        ? `${registrationModal.travel.distanceKm} km from ${volunteer.startingLocation.label}`
+                        : `From ${volunteer.startingLocation.label}`}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="space-y-1.5 text-sm text-slate-600">
+                  <p className="text-xs font-bold text-slate-800">What you&apos;ll be doing</p>
+                  <p className="text-xs sm:text-sm leading-relaxed">
+                    {registrationModal.opportunity.description}
+                  </p>
+                  <p className="text-xs text-slate-500 pt-1">
+                    <strong>Helpful skills:</strong>{' '}
+                    {registrationModal.opportunity.requiredSkills.length > 0
+                      ? registrationModal.opportunity.requiredSkills.join(', ')
+                      : 'No prior experience needed'}
+                  </p>
+                </div>
+
+                {/* Conflict Detection Block */}
+                {registrationModal.conflicts.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2.5 text-xs">
+                    <div className="flex items-center gap-2 font-bold text-amber-900">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        {registrationModal.conflicts.some((c) => c.type === 'overlap')
+                          ? 'This shift overlaps with your existing booking'
+                          : 'Tight gap between two shifts on the same day'}
+                      </span>
                     </div>
+                    {registrationModal.conflicts.map((c) => (
+                      <p key={c.booking.id} className="text-amber-900">
+                        {c.message}
+                      </p>
+                    ))}
+                    <div className="pt-1 space-y-1.5">
+                      <p className="font-semibold text-slate-800">Conflict-free alternatives:</p>
+                      {suggestConflictAlternatives(
+                        registrationModal.opportunity,
+                        volunteer,
+                        opportunities,
+                        travelTimes,
+                        holidays,
+                        bookings
+                      )
+                        .slice(0, 2)
+                        .map(({ opportunity: alt }) => (
+                          <div
+                            key={alt.id}
+                            className="flex items-center justify-between gap-2 bg-white border border-amber-200 rounded-lg p-2.5"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900 truncate">{alt.title}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {alt.dateLabel} · {alt.timeLabel}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmRegistration(alt.id)}
+                              className="px-3 min-h-[36px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shrink-0 cursor-pointer"
+                            >
+                              Choose Instead
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationModal(null)}
+                    className="px-4 min-h-[44px] text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                  >
+                    Go Back
+                  </button>
+                  {!registrationModal.conflicts.some((c) => c.type === 'overlap') ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleConfirmRegistration(registrationModal.opportunity.id)
+                      }
+                      className="px-6 min-h-[44px] text-xs sm:text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+                    >
+                      {registrationModal.opportunity.spotsFilled >=
+                      registrationModal.opportunity.spotsTotal
+                        ? 'Join Waitlist'
+                        : 'Confirm Spot'}
+                    </button>
+                  ) : (
                     <button
                       type="button"
                       onClick={() => {
-                        setConflictModal(null);
-                        onBookShift(alt.id);
+                        setRegistrationModal(null);
+                        onSelectSubTab('calendar');
                       }}
-                      className="px-3 py-1.5 font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shrink-0 cursor-pointer"
+                      className="px-5 min-h-[44px] text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg cursor-pointer"
                     >
-                      Register Instead
+                      Review My Calendar
                     </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* Friendly Step 3 Confirmation Screen */
+              <div className="py-2 text-center space-y-5">
+                <div className="w-14 h-14 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3
+                    id="reg-modal-title"
+                    className="font-display text-2xl font-bold text-slate-900"
+                  >
+                    You&apos;re making a difference!
+                  </h3>
+                  <p className="text-sm text-slate-600">
+                    Your mission is confirmed. We&apos;ve added it to your calendar.
+                  </p>
+                </div>
 
-            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setConflictModal(null);
-                  onSelectSubTab('calendar');
-                }}
-                className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
-              >
-                Manage in My Calendar
-              </button>
-              {!conflictModal.conflicts.some((c) => c.type === 'overlap') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const id = conflictModal.candidateOpp.id;
-                    setConflictModal(null);
-                    onBookShift(id);
-                  }}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg cursor-pointer"
-                >
-                  Register Anyway
-                </button>
-              )}
-            </div>
+                <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 text-left text-xs space-y-1">
+                  <p className="font-bold text-slate-900 text-sm">
+                    {registrationModal.opportunity.title}
+                  </p>
+                  <p className="text-slate-600">
+                    {registrationModal.opportunity.charityName}
+                  </p>
+                  <p className="text-slate-600 pt-1">
+                    {registrationModal.opportunity.dateLabel} ·{' '}
+                    {registrationModal.opportunity.timeLabel} ·{' '}
+                    {registrationModal.opportunity.location}
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegistrationModal(null);
+                      onSelectSubTab('my-volunteering');
+                    }}
+                    className="px-4 min-h-[44px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+                  >
+                    View My Mission
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = registrationModal.opportunity.id;
+                      setRegistrationModal(null);
+                      onOpenRoutePlanner(id);
+                    }}
+                    className="px-4 min-h-[44px] text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                  >
+                    Plan My Journey
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadIcs(registrationModal.opportunity)}
+                    className="px-4 min-h-[44px] text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
+                  >
+                    Add to Calendar (.ics)
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -104,10 +104,20 @@ function loadPersistedState(): PersistedState | null {
   }
 }
 
+function isPresentationUrl(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.location.pathname === '/presentation' ||
+    window.location.hash === '#/presentation'
+  );
+}
+
 export default function App() {
   const initialPersisted = useMemo(() => loadPersistedState(), []);
 
-  const [currentPage, setCurrentPage] = useState<PageView>('home');
+  const [currentPage, setCurrentPage] = useState<PageView>(() =>
+    isPresentationUrl() ? 'demo' : 'home'
+  );
   const [activeVolunteerTab, setActiveVolunteerTab] = useState<VolunteerSubTab>('discover');
   const [routePlannerOppId, setRoutePlannerOppId] = useState<string | null>(null);
   const [activeReminderModal, setActiveReminderModal] = useState<WhatsAppReminderPayload | null>(
@@ -169,6 +179,17 @@ export default function App() {
   useEffect(() => {
     document.title = PAGE_TITLES[currentPage];
   }, [currentPage]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setCurrentPage((prev) => {
+        if (isPresentationUrl()) return 'demo';
+        return prev === 'demo' ? 'home' : prev;
+      });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     try {
@@ -282,12 +303,21 @@ export default function App() {
     } else if (page === 'volunteers') {
       setActiveVolunteerTab((prev) => (prev === 'calendar' ? 'discover' : prev));
     }
+    if (page === 'demo' && window.location.pathname !== '/presentation') {
+      window.history.pushState({}, '', '/presentation');
+    } else if (page !== 'demo' && window.location.pathname === '/presentation') {
+      window.history.pushState({}, '', '/');
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   const handleSelectVolunteerSubTab = useCallback((tab: VolunteerSubTab) => {
-    setActiveVolunteerTab(tab);
-    setCurrentPage(tab === 'calendar' ? 'calendar' : 'volunteers');
+    const resolved: VolunteerSubTab = tab === 'notifications' ? 'profile' : tab;
+    setActiveVolunteerTab(resolved);
+    setCurrentPage(resolved === 'calendar' ? 'calendar' : 'volunteers');
+    if (window.location.pathname === '/presentation') {
+      window.history.pushState({}, '', '/');
+    }
   }, []);
 
   const handleOpenRoutePlanner = useCallback((oppId: string) => {
@@ -804,7 +834,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAFAF9] text-slate-900">
-      <Navbar currentPage={currentPage} onNavigate={handleNavigate} />
+      <Navbar
+        currentPage={currentPage}
+        activeVolunteerTab={activeVolunteerTab}
+        onNavigate={handleNavigate}
+        onSelectVolunteerTab={handleSelectVolunteerSubTab}
+      />
 
       <DemoToolbar
         demoActive={demoActive}
@@ -818,7 +853,10 @@ export default function App() {
         onNavigate={handleNavigate}
         onSelectVolunteer={setActiveVolunteerId}
         onResetDemo={handleResetDemo}
-        onExitDemo={() => setDemoActive(false)}
+        onExitDemo={() => {
+          setDemoActive(false);
+          handleNavigate('home');
+        }}
       />
 
       <main className="flex-1">
@@ -826,7 +864,7 @@ export default function App() {
           <HomeView
             opportunities={opportunities}
             onNavigate={handleNavigate}
-            onLaunchDemo={() => handleLaunchDemo(1, 'volunteer-journey')}
+            onOpenVolunteerTab={handleSelectVolunteerSubTab}
             onNotify={(title, desc) => notify(title, desc)}
           />
         )}
@@ -834,6 +872,8 @@ export default function App() {
         {(currentPage === 'volunteers' || currentPage === 'calendar') && (
           <VolunteerDashboard
             volunteer={activeVolunteer}
+            allVolunteers={volunteers}
+            onSelectVolunteer={setActiveVolunteerId}
             opportunities={opportunities}
             bookings={bookings}
             invitations={invitations}
@@ -925,8 +965,8 @@ export default function App() {
         onClose={() => setActiveReminderModal(null)}
         onViewMission={() => {
           setActiveReminderModal(null);
-          setActiveVolunteerTab('calendar');
-          setCurrentPage('calendar');
+          setActiveVolunteerTab('my-volunteering');
+          setCurrentPage('volunteers');
         }}
         onPlanJourney={(oppId) => {
           setActiveReminderModal(null);

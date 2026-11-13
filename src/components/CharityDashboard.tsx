@@ -69,7 +69,6 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
   onSimulateCancellation,
   onSendRescueInvitation,
   onSwitchToVolunteer,
-  onNotify,
 }) => {
   const [selectedCharityId, setSelectedCharityId] = useState<string>(charities[0]?.id ?? 'char-01');
   const [selectedOppId, setSelectedOppId] = useState<string>('opp-01');
@@ -204,6 +203,32 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
     return { eligible, excludedConflicts, excludedSkills };
   }, [activeOpportunity, oppBookings, volunteerPool, holidays, bookings, opportunities, invitations]);
 
+  const charityOppIds = useMemo(
+    () => new Set(charityOpportunities.map((o) => o.id)),
+    [charityOpportunities]
+  );
+
+  const shiftsRequiringVolunteers = useMemo(
+    () => charityOpportunities.filter((o) => o.spotsFilled < o.spotsTotal),
+    [charityOpportunities]
+  );
+
+  const pendingCharityInvites = useMemo(
+    () =>
+      invitations.filter(
+        (i) => charityOppIds.has(i.opportunityId) && i.status === 'Pending'
+      ),
+    [invitations, charityOppIds]
+  );
+
+  const recentCharityCancellations = useMemo(
+    () =>
+      bookings.filter(
+        (b) => charityOppIds.has(b.opportunityId) && b.status === 'Cancelled'
+      ),
+    [bookings, charityOppIds]
+  );
+
   const totalSpots = charityOpportunities.reduce((sum, o) => sum + o.spotsTotal, 0);
   const filledSpots = charityOpportunities.reduce((sum, o) => sum + o.spotsFilled, 0);
   const fillRate = totalSpots > 0 ? Math.round((filledSpots / totalSpots) * 100) : 0;
@@ -308,7 +333,10 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mt-2">
             {activeCharity.name}
           </h1>
-          <p className="text-sm text-slate-600 mt-1">{activeCharity.verificationNote}</p>
+          <p className="text-sm text-slate-600 mt-1">
+            Monitor upcoming shift staffing, fill last-minute gaps, and confirm volunteer
+            attendance.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -316,7 +344,7 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
             value={activeCharity.id}
             onChange={(e) => setSelectedCharityId(e.target.value)}
             aria-label="Switch charity organisation"
-            className="px-3.5 py-2.5 text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+            className="px-3.5 min-h-[42px] text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
           >
             {charities.map((c) => (
               <option key={c.id} value={c.id}>
@@ -328,10 +356,10 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
           <button
             type="button"
             onClick={() => setShowCreateForm((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>{showCreateForm ? 'Close Form' : 'Publish New Shift'}</span>
+            <span>{showCreateForm ? 'Close Form' : 'Post a New Shift'}</span>
           </button>
         </div>
       </div>
@@ -489,90 +517,102 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
         </form>
       )}
 
-      {/* Cancellation & Rescue a Shift Alerts for Charity Coordinator */}
-      {(() => {
-        const charityOppIds = new Set(charityOpportunities.map((o) => o.id));
-        const recentCancellations = bookings.filter(
-          (b) => charityOppIds.has(b.opportunityId) && b.status === 'Cancelled'
-        );
-        if (recentCancellations.length === 0) return null;
-        return (
-          <div
-            role="region"
-            aria-label="Volunteer cancellation alerts"
-            className="bg-amber-50 border border-amber-300 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-          >
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-amber-900">
-                Cancellation Alert ({recentCancellations.length}) · Action Required
-              </p>
-              <p className="text-xs text-amber-900">
-                {recentCancellations
-                  .slice(0, 2)
-                  .map((c) => {
-                    const opp = charityOpportunities.find((o) => o.id === c.opportunityId);
-                    return `${c.volunteerName} cancelled "${opp?.title ?? 'Shift'}"`;
-                  })
-                  .join(' · ')}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const firstOppId = recentCancellations[0]?.opportunityId;
-                if (firstOppId) setSelectedOppId(firstOppId);
-                setRescueOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <LifeBuoy className="w-3.5 h-3.5" />
-              <span>Find Replacement via Rescue a Shift</span>
-            </button>
-          </div>
-        );
-      })()}
-
-      {/* KPI Metrics Row */}
+      {/* Operational Staffing Overview (Answers: Are my upcoming shifts adequately staffed?) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Organisation Shift Fill Rate</p>
-          <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">{fillRate}%</p>
+          <p className="text-xs text-slate-500">Upcoming Shifts</p>
+          <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">
+            {charityOpportunities.length}
+          </p>
           <p className="text-xs text-teal-700 mt-1">
-            {filledSpots} of {totalSpots} roster spots confirmed
+            {filledSpots} of {totalSpots} volunteer spots filled ({fillRate}%)
           </p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Selected Shift Staffing</p>
-          <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">
-            {activeOpportunity ? `${activeOpportunity.spotsFilled} / ${activeOpportunity.spotsTotal}` : '—'}
-          </p>
+          <p className="text-xs text-slate-500">Shifts Requiring Volunteers</p>
           <p
-            className={`text-xs font-semibold mt-1 ${
-              remainingVacancies > 0 ? 'text-amber-700' : 'text-teal-700'
+            className={`font-mono-tabular text-2xl font-bold mt-1 ${
+              shiftsRequiringVolunteers.length > 0 ? 'text-amber-700' : 'text-teal-700'
             }`}
           >
-            {remainingVacancies > 0
-              ? `Needs Replacement (${remainingVacancies} vacancy)`
-              : 'Fully Staffed'}
-          </p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Eligible Rescue Pool</p>
-          <p className="font-mono-tabular text-2xl font-bold text-teal-700 mt-1">
-            {rescueAnalysis.eligible.length}
+            {shiftsRequiringVolunteers.length}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Screened from {volunteerPool.length} active volunteers
+            {shiftsRequiringVolunteers.length > 0
+              ? 'Have open or vacated spots'
+              : 'All upcoming shifts are staffed'}
           </p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Schedule Conflicts Excluded</p>
-          <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">
-            {rescueAnalysis.excludedConflicts}
+          <p className="text-xs text-slate-500">Pending Invitations</p>
+          <p className="font-mono-tabular text-2xl font-bold text-teal-700 mt-1">
+            {pendingCharityInvites.length}
           </p>
-          <p className="text-xs text-slate-500 mt-1">Volunteers booked elsewhere</p>
+          <p className="text-xs text-slate-500 mt-1">Awaiting volunteer response</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <p className="text-xs text-slate-500">Recent Cancellations</p>
+          <p
+            className={`font-mono-tabular text-2xl font-bold mt-1 ${
+              recentCharityCancellations.length > 0 ? 'text-red-700' : 'text-slate-900'
+            }`}
+          >
+            {recentCharityCancellations.length}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            {recentCharityCancellations.length > 0
+              ? 'Replacements can be invited below'
+              : 'No recent drop-offs'}
+          </p>
         </div>
       </div>
+
+      {/* Action Needed Callouts */}
+      {shiftsRequiringVolunteers.length > 0 && (
+        <div
+          role="region"
+          aria-label="Shifts needing volunteers"
+          className="space-y-3"
+        >
+          {shiftsRequiringVolunteers.map((opp) => {
+            const needed = Math.max(0, opp.spotsTotal - opp.spotsFilled);
+            const hasCancellation = recentCharityCancellations.some(
+              (c) => c.opportunityId === opp.id
+            );
+            return (
+              <div
+                key={opp.id}
+                className="bg-amber-50 border border-amber-300 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+              >
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-amber-900">
+                    Action needed{hasCancellation ? ' · Recent cancellation' : ''}
+                  </p>
+                  <p className="text-sm sm:text-base font-bold text-slate-900">
+                    {opp.title}
+                  </p>
+                  <p className="text-xs sm:text-sm text-amber-950">
+                    {opp.spotsFilled} of {opp.spotsTotal} volunteers confirmed · {needed}{' '}
+                    {needed === 1 ? 'replacement' : 'volunteers'} needed ({opp.dateLabel} ·{' '}
+                    {opp.timeLabel})
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedOppId(opp.id);
+                    setRescueOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-5 min-h-[44px] text-xs sm:text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <LifeBuoy className="w-4 h-4" />
+                  <span>Find Replacement</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Main Split: Shifts Overview + Roster & Rescue a Shift */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -655,19 +695,19 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
                         onSimulateCancellation(activeOpportunity.id);
                         setRescueOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 min-h-[40px] text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg cursor-pointer"
                     >
                       <UserX className="w-3.5 h-3.5" />
-                      <span>Simulate Volunteer Cancellation</span>
+                      <span>Mark Drop-off</span>
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => setRescueOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-4 min-h-[40px] text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg cursor-pointer"
                   >
                     <LifeBuoy className="w-3.5 h-3.5" />
-                    <span>Rescue a Shift</span>
+                    <span>Find Replacement</span>
                   </button>
                 </div>
               </div>
@@ -799,23 +839,22 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
                   <div>
                     <h3 className="font-display text-base font-bold text-slate-900">
-                      Rescue a Shift — Eligible Replacement Shortlist
+                      Available Replacement Volunteers
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Filtered by overlapping availability ({SLOT_LABELS[activeOpportunity.slot]}),
-                      mandatory skills ({activeOpportunity.requiredSkills.join(', ') || 'Any'}),
-                      excluding {rescueAnalysis.excludedConflicts} schedule conflict(s).
+                      Free on {SLOT_LABELS[activeOpportunity.slot]}, qualified ({activeOpportunity.requiredSkills.join(', ') || 'No prior experience required'}),
+                      with {rescueAnalysis.excludedConflicts} busy volunteer(s) automatically filtered out.
                     </p>
                   </div>
                   <span className="inline-flex items-center gap-1 font-mono-tabular text-xs font-semibold text-teal-700 shrink-0">
                     <Users className="w-3.5 h-3.5" />
-                    {rescueAnalysis.eligible.length} eligible
+                    {rescueAnalysis.eligible.length} available
                   </span>
                 </div>
 
                 {rescueAnalysis.eligible.length === 0 ? (
                   <p className="py-4 text-xs text-slate-500">
-                    No unbooked conflict-free replacements matched all criteria for this shift.
+                    No unbooked replacements matched all requirements for this shift right now.
                   </p>
                 ) : (
                   <div className="divide-y divide-slate-100">
@@ -827,9 +866,6 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-sm font-bold text-slate-900">{volunteer.name}</p>
-                            <span className="font-mono-tabular text-xs font-bold text-teal-700">
-                              {match.score}% match
-                            </span>
                             <span className="text-xs text-slate-500">
                               · {volunteer.startingLocation.label} ({dist} km away)
                             </span>
@@ -839,7 +875,7 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
                             {volunteer.causes.join(', ')}
                           </p>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            Why they match: {match.reasons.join(' · ')}
+                            {match.reasons.slice(0, 3).join(' · ')}
                           </p>
                         </div>
 
@@ -853,9 +889,9 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSwitchToVolunteer(volunteer.id)}
-                                  className="px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
+                                  className="px-3 min-h-[38px] text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
                                 >
-                                  Switch to {volunteer.name.split(' ')[0]}&apos;s View &rarr;
+                                  Respond as {volunteer.name.split(' ')[0]} &rarr;
                                 </button>
                               )}
                             </div>
@@ -875,10 +911,10 @@ export const CharityDashboard: React.FC<CharityDashboardProps> = ({
                                   match.reasons
                                 )
                               }
-                              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg whitespace-nowrap cursor-pointer"
+                              className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg whitespace-nowrap cursor-pointer"
                             >
                               <Send className="w-3.5 h-3.5" />
-                              <span>Send Invitation</span>
+                              <span>Invite to Shift</span>
                             </button>
                           )}
                         </div>

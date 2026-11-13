@@ -10,8 +10,9 @@ export type PageView =
 export type VolunteerSubTab =
   | 'discover'
   | 'calendar'
-  | 'route-planner'
   | 'my-volunteering'
+  | 'route-planner'
+  | 'profile'
   | 'notifications';
 
 export type AvailabilitySlot =
@@ -95,6 +96,7 @@ export interface Opportunity {
   urgency: 'Normal' | 'Urgent Fill';
   isOutdoor: boolean;
   corporateFriendly: boolean;
+  commitmentType?: 'One-time' | 'Recurring';
   description: string;
 }
 

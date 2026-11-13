@@ -35,6 +35,7 @@ interface MissionCalendarViewProps {
   onUpdateAvailabilityOverride: (date: string, override: AvailabilityOverride | null) => void;
   onUpdateVolunteer: (updated: VolunteerProfile) => void;
   onBookShift: (opportunityId: string) => void;
+  onSelectOpportunityToRegister?: (opp: Opportunity) => void;
   onCancelBooking: (bookingId: string) => void;
   onConfirmAttendance: (bookingId: string) => void;
   onPlanJourney: (opportunityId: string) => void;
@@ -72,6 +73,7 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
   onUpdateAvailabilityOverride,
   onUpdateVolunteer,
   onBookShift,
+  onSelectOpportunityToRegister,
   onCancelBooking,
   onConfirmAttendance,
   onPlanJourney,
@@ -295,14 +297,13 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
       <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <p className="text-xs font-semibold text-teal-700">
-            Personal Volunteering Schedule · Singapore Holidays ({holidaysSource === 'live' ? 'data.gov.sg Live' : 'MOM Fallback'})
+            Personal Volunteering Schedule · Includes Singapore Public Holidays
           </p>
           <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900 mt-0.5">
-            My Mission Calendar
+            My Calendar
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            View confirmed shifts, pending Rescue invitations, public holidays, and manage your
-            weekly or date-specific availability.
+            See your upcoming missions, Singapore public holidays, and set when you&apos;re free.
           </p>
         </div>
 
@@ -313,7 +314,7 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
                 key={mode}
                 type="button"
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md capitalize cursor-pointer ${
+                className={`px-3 min-h-[40px] text-xs font-semibold rounded-md capitalize cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${
                   viewMode === mode
                     ? 'bg-white text-slate-900 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
@@ -327,10 +328,10 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
           <button
             type="button"
             onClick={handleExportAllConfirmed}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export Confirmed (.ics)</span>
+            <span>Export to Calendar (.ics)</span>
           </button>
         </div>
       </div>
@@ -377,22 +378,23 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
               <span className="font-semibold text-teal-700">Confirmed</span>
               <span aria-hidden="true">·</span>
-              <span className="font-semibold text-amber-700">Pending Rescue / Holiday</span>
+              <span className="font-semibold text-amber-700">Urgent Invite / Public Holiday</span>
               <span aria-hidden="true">·</span>
               <span className="font-semibold text-red-600">Cancelled</span>
               <span aria-hidden="true">·</span>
-              <span>Open Shift</span>
+              <span>Available</span>
             </div>
           </div>
 
           {viewMode === 'monthly' && (
-            <div>
-              <div className="grid grid-cols-7 text-center text-xs font-semibold text-slate-500 pb-2">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <div key={d}>{d}</div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-1.5">
+            <div className="overflow-x-auto pb-1">
+              <div className="min-w-[540px]">
+                <div className="grid grid-cols-7 text-center text-xs font-semibold text-slate-500 pb-2">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                    <div key={d}>{d}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1.5">
                 {monthDays.map((cell) => {
                   const { dateBookings, dateInvites, openShiftsOnDate } = getEventsForDate(
                     cell.isoDate
@@ -481,7 +483,7 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
                             }}
                             className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-semibold truncate bg-amber-100 text-amber-900 cursor-pointer"
                           >
-                            Rescue: {opportunity.title}
+                            Invite: {opportunity.title}
                           </button>
                         ))}
                         {openShiftsOnDate.slice(0, 1).map((opp) => (
@@ -502,6 +504,7 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
                     </div>
                   );
                 })}
+                </div>
               </div>
             </div>
           )}
@@ -567,7 +570,7 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
                           }}
                           className="w-full text-left p-2 rounded-lg text-[11px] font-semibold bg-amber-100 text-amber-900 cursor-pointer"
                         >
-                          Rescue Invite · {opportunity.title}
+                          Urgent Invite · {opportunity.title}
                         </button>
                       ))}
                       {openShiftsOnDate.map((opp) => (
@@ -661,9 +664,13 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onBookShift(opp.id);
+                          if (onSelectOpportunityToRegister) {
+                            onSelectOpportunityToRegister(opp);
+                          } else {
+                            onBookShift(opp.id);
+                          }
                         }}
-                        className="px-3.5 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shrink-0 cursor-pointer"
+                        className="px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shrink-0 cursor-pointer"
                       >
                         Register
                       </button>
@@ -764,24 +771,30 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
                   <div className="pt-3 border-t border-slate-100 space-y-2">
                     {selectedEventCancelled && (
                       <p className="text-red-600 font-semibold">
-                        Previously cancelled — open spot flagged for Rescue a Shift.
+                        Previously cancelled — open spot available to rebook.
                       </p>
                     )}
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => onBookShift(selectedEventOpp.id)}
-                        className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+                        onClick={() => {
+                          if (onSelectOpportunityToRegister) {
+                            onSelectOpportunityToRegister(selectedEventOpp);
+                          } else {
+                            onBookShift(selectedEventOpp.id);
+                          }
+                        }}
+                        className="px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
                       >
-                        Register for Shift
+                        Register for Mission
                       </button>
                       <button
                         type="button"
                         onClick={() => onPlanJourney(selectedEventOpp.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-3 min-h-[42px] text-xs font-semibold text-slate-700 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg cursor-pointer"
                       >
                         <Navigation className="w-3.5 h-3.5" />
-                        <span>Preview Route</span>
+                        <span>View Route</span>
                       </button>
                     </div>
                   </div>
@@ -909,11 +922,11 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
             </div>
           </div>
 
-          {/* Pending Rescue Invitations quick respond */}
+          {/* Pending Urgent Shift Invitations quick respond */}
           {pendingInvites.length > 0 && (
             <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 space-y-3">
               <p className="text-xs font-bold text-amber-900">
-                Pending Rescue Invitations ({pendingInvites.length})
+                Urgent Shift Invitations ({pendingInvites.length})
               </p>
               {pendingInvites.map((inv) => {
                 const opp = opportunities.find((o) => o.id === inv.opportunityId);
@@ -928,14 +941,14 @@ export const MissionCalendarView: React.FC<MissionCalendarViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onRespondInvitation(inv.id, true)}
-                        className="px-3 py-1.5 font-semibold text-white bg-teal-700 rounded-lg cursor-pointer"
+                        className="px-3 min-h-[40px] font-semibold text-white bg-teal-700 rounded-lg cursor-pointer"
                       >
                         Accept
                       </button>
                       <button
                         type="button"
                         onClick={() => onRespondInvitation(inv.id, false)}
-                        className="px-3 py-1.5 font-semibold text-slate-700 border border-slate-300 rounded-lg cursor-pointer"
+                        className="px-3 min-h-[40px] font-semibold text-slate-700 border border-slate-300 rounded-lg cursor-pointer"
                       >
                         Decline
                       </button>

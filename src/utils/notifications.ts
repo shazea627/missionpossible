@@ -64,25 +64,28 @@ export function buildWhatsAppReminderPayload(params: {
 
   const travelSummary =
     travelMinutes !== null
-      ? `~${travelMinutes} min via OneMap${distanceKm ? ` (${distanceKm} km)` : ''}`
+      ? `About ${travelMinutes} min travel${distanceKm ? ` (${distanceKm} km)` : ''}`
       : distanceKm !== undefined
-      ? `Travel time unavailable (${distanceKm} km from ${volunteer.startingLocation.label})`
+      ? `${distanceKm} km from ${volunteer.startingLocation.label}`
       : `Depart from ${volunteer.startingLocation.label}`;
 
   const suggestedDepartureLabel = departure
-    ? `${departure.departureTime24} SGT (${departure.departureTime12}) with ${bufferMinutes}-min buffer`
-    : `Allow ${bufferMinutes}-min buffer before ${opportunity.startTime24} SGT (${formatTime12Sg(
-        opportunity.startTime24
-      )})`;
+    ? `${departure.departureTime12} (${bufferMinutes}-min early buffer)`
+    : `Allow ${bufferMinutes} min extra before ${formatTime12Sg(opportunity.startTime24)}`;
+
+  const firstName = volunteer.name.split(' ')[0];
+  const leadText =
+    offsetLabel.includes('24 hours')
+      ? `Hi ${firstName}, your mission is tomorrow! Here’s everything you need to know:`
+      : `Hi ${firstName}, friendly reminder for your upcoming mission (${offsetLabel}):`;
 
   const messageLines = [
-    `Hi ${volunteer.name.split(' ')[0]}, reminder for your MissionPossible shift (${offsetLabel}):`,
-    `Mission: ${opportunity.title}`,
-    `Charity: ${opportunity.charityName}`,
-    `When: ${opportunity.dateLabel} · ${opportunity.timeLabel} (SGT)`,
+    leadText,
+    `Mission: ${opportunity.title} with ${opportunity.charityName}`,
+    `When: ${opportunity.dateLabel} · ${opportunity.timeLabel}`,
     `Where: ${opportunity.location}, Singapore ${opportunity.postalCode}`,
-    `Est. Journey: ${travelSummary}`,
-    `Suggested Departure: ${suggestedDepartureLabel}`,
+    `Travel: ${travelSummary}`,
+    `Suggested departure: ${suggestedDepartureLabel}`,
   ];
 
   return {
@@ -90,7 +93,7 @@ export function buildWhatsAppReminderPayload(params: {
     isSimulated: true,
     offsetLabel,
     sentAtSg: getSingaporeNowTimeLabel(),
-    recipientLabel: `${volunteer.name} · Simulated WhatsApp Preview`,
+    recipientLabel: `${volunteer.name} · Preview Only (Simulated)`,
     opportunity,
     travelMinutes,
     distanceKm,

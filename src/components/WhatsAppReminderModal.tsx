@@ -56,9 +56,9 @@ export const WhatsAppReminderModal: React.FC<WhatsAppReminderModalProps> = ({
         <div className="bg-[#EFEAE2] p-5 space-y-4">
           <div className="flex items-center justify-between text-[11px] text-slate-600">
             <span className="font-semibold text-slate-800">
-              MissionPossible Volunteer Alerts (Simulated)
+              MissionPossible Reminders (Preview Only)
             </span>
-            <span className="font-mono-tabular">Simulated · {payload.offsetLabel}</span>
+            <span className="font-mono-tabular">Preview · {payload.offsetLabel}</span>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-2 text-xs text-slate-800">
@@ -77,7 +77,7 @@ export const WhatsAppReminderModal: React.FC<WhatsAppReminderModalProps> = ({
           {/* Interactive In-App Action Buttons */}
           <div className="space-y-2">
             <p className="text-[11px] font-semibold text-slate-700">
-              Interactive Quick Actions (updates live MissionPossible dashboards):
+              Quick Actions:
             </p>
             <div className="flex flex-wrap gap-2">
               <button

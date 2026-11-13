@@ -2,14 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
-  CheckCircle2,
-  Clock,
-  Footprints,
-  MapPin,
-  Navigation,
-  Route,
-  TrainFront,
   Car,
+  CheckCircle2,
+  Footprints,
+  TrainFront,
 } from 'lucide-react';
 import {
   OneMapSearchResult,
@@ -21,7 +17,12 @@ import {
   TravelMode,
   VolunteerProfile,
 } from '../types';
-import { calculateSuggestedDeparture, minutesBetweenShifts, shiftsOverlap, time24ToMinutes } from '../utils/time';
+import {
+  calculateSuggestedDeparture,
+  minutesBetweenShifts,
+  shiftsOverlap,
+  time24ToMinutes,
+} from '../utils/time';
 import { OneMapExplorer } from './OneMapExplorer';
 
 interface RoutePlannerViewProps {
@@ -38,9 +39,9 @@ interface RoutePlannerViewProps {
 }
 
 const PLANNER_MODES: { id: 'pt' | 'walk' | 'drive'; label: string; icon: React.ReactNode }[] = [
-  { id: 'pt', label: 'Public Transport', icon: <TrainFront className="w-3.5 h-3.5" /> },
-  { id: 'walk', label: 'Walking', icon: <Footprints className="w-3.5 h-3.5" /> },
-  { id: 'drive', label: 'Driving', icon: <Car className="w-3.5 h-3.5" /> },
+  { id: 'pt', label: 'Public Transport', icon: <TrainFront className="w-4 h-4" /> },
+  { id: 'walk', label: 'Walking', icon: <Footprints className="w-4 h-4" /> },
+  { id: 'drive', label: 'Driving', icon: <Car className="w-4 h-4" /> },
 ];
 
 const QUICK_ORIGIN_PRESETS: OneMapSearchResult[] = [
@@ -162,7 +163,6 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
   const [routeResult, setRouteResult] = useState<RoutePlanResult | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
 
-  // Fetch detailed OneMap route whenever origin, selectedOpp, or transportMode changes
   useEffect(() => {
     if (!selectedOpp || plannerTab !== 'single') return;
     let active = true;
@@ -194,7 +194,7 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
             distanceKm: travelTimes[selectedOpp.id]?.distanceKm ?? 0,
             instructions: [],
             polyline: [],
-            reason: 'Unable to reach OneMap routing proxy right now.',
+            reason: 'Live route timing could not be loaded right now.',
           });
         }
       } finally {
@@ -211,7 +211,7 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
     e.preventDefault();
     const q = originSearch.trim();
     if (!q) {
-      setOriginError('Enter a 6-digit Singapore postal code or MRT/place name.');
+      setOriginError('Please enter a 6-digit Singapore postal code or landmark.');
       return;
     }
     setSearchingOrigin(true);
@@ -226,10 +226,10 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
         setOriginResults(data.results);
       } else {
         setOriginResults([]);
-        setOriginError('No Singapore location matched that query.');
+        setOriginError('We could not find a matching Singapore address or postal code.');
       }
     } catch {
-      setOriginError('OneMap address lookup unavailable.');
+      setOriginError('Address search is temporarily unavailable. Try a preset neighbourhood below.');
     } finally {
       setSearchingOrigin(false);
     }
@@ -253,7 +253,7 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
         startingLocation: nextOrigin,
         travelMode: transportMode as TravelMode,
       });
-      onNotify('Default starting location updated', `${place.building} (S${place.postal})`);
+      onNotify('Starting location saved', `${place.building} (Singapore ${place.postal})`);
     }
   };
 
@@ -265,14 +265,13 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
       )
     : null;
 
-  // --- MULTI-MISSION SAME-DAY ROUTE PLANNER ---
+  // Multi-mission planning
   const uniqueDates = useMemo(() => {
     const set = new Set<string>(opportunities.map((o) => o.isoDate));
     return Array.from(set).sort();
   }, [opportunities]);
 
   const defaultMultiDate = useMemo(() => {
-    // Prefer a date with confirmed shifts or multiple same-day shifts (e.g. dPlus6)
     const confirmedDate = confirmedOpps[0]?.isoDate;
     if (confirmedDate) return confirmedDate;
     const multiShiftDate = uniqueDates.find(
@@ -320,7 +319,6 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
       );
       return;
     }
-    // Pre-select compatible same-day pair (e.g., opp-13 morning + opp-02 afternoon) for quick exploration
     const nonOverlappingPair: string[] = [];
     for (const candidate of sameDayCandidates) {
       const overlaps = nonOverlappingPair.some((id) => {
@@ -423,57 +421,56 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
 
   const hasMultiIssues = multiLegs.some((l) => l.overlapWithPrev || l.tightTransition);
 
+  const activeModeLabel =
+    PLANNER_MODES.find((m) => m.id === transportMode)?.label ?? 'Public Transport';
+
   return (
     <div className="space-y-6">
-      {/* Header & Single / Multi-Mission Mode Switch */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Header & Single / Multi-Mission Switch */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold text-teal-700">
-            Smart Volunteer Route Planner · Singapore Local Time (SGT)
-          </p>
-          <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900 mt-0.5">
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
             Plan My Journey
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Calculate travel durations, suggested departure times with arrival buffers, and
-            multi-mission itineraries across Singapore using OneMap routing.
+          </h1>
+          <p className="text-sm sm:text-base text-slate-600 mt-1">
+            See how to get to your mission, how long it takes, and what time to leave.
           </p>
         </div>
 
-        <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-lg shrink-0 self-start">
+        <div className="inline-flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg shrink-0 self-start">
           <button
             type="button"
             onClick={() => setPlannerTab('single')}
-            className={`px-3.5 py-2 text-xs font-semibold rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`px-3.5 min-h-[40px] text-xs sm:text-sm font-semibold rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
               plannerTab === 'single'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Single Mission Route
+            Single Mission
           </button>
           <button
             type="button"
             onClick={() => setPlannerTab('multi')}
-            className={`px-3.5 py-2 text-xs font-semibold rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`px-3.5 min-h-[40px] text-xs sm:text-sm font-semibold rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
               plannerTab === 'multi'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Multi-Mission Day Route ({sameDayCandidates.length} on date)
+            Multiple Missions in One Day
           </button>
         </div>
       </div>
 
-      {/* Shared Starting Location + Transport Mode + Buffer Configuration */}
+      {/* Journey Setup Bar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 space-y-2.5">
           <label
             htmlFor="route-origin-search"
             className="block text-xs font-semibold text-slate-700"
           >
-            Starting Location or Singapore Postal Code
+            Where are you leaving from?
           </label>
           <form onSubmit={handleOriginSearchSubmit} className="flex gap-2">
             <input
@@ -481,18 +478,22 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               type="text"
               value={originSearch}
               onChange={(e) => setOriginSearch(e.target.value)}
-              placeholder="e.g. 408600 or Eunos MRT"
-              className="flex-1 min-w-0 px-3 py-2 text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+              placeholder="Postal code or MRT station"
+              className="flex-1 min-w-0 px-3.5 min-h-[44px] text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
             />
             <button
               type="submit"
               disabled={searchingOrigin}
-              className="px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-4 min-h-[44px] text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {searchingOrigin ? '...' : 'Locate'}
+              {searchingOrigin ? 'Finding...' : 'Set Start'}
             </button>
           </form>
-          {originError && <p className="text-xs text-red-600">{originError}</p>}
+          {originError && (
+            <p role="alert" className="text-xs text-red-600">
+              {originError}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-1.5">
             {QUICK_ORIGIN_PRESETS.map((preset) => (
@@ -500,13 +501,13 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                 key={preset.postal}
                 type="button"
                 onClick={() => applyOrigin(preset)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded border cursor-pointer ${
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border cursor-pointer ${
                   origin.postalCode === preset.postal
                     ? 'bg-teal-50 border-teal-600 text-teal-900 font-semibold'
                     : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
                 }`}
               >
-                {preset.building.split(' ')[0]} ({preset.postal})
+                {preset.building.split(' ')[0]}
               </button>
             ))}
           </div>
@@ -516,7 +517,7 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               {originResults.map((place, idx) => (
                 <div
                   key={`${place.postal}-${idx}`}
-                  className="px-3 py-2 flex items-center justify-between gap-2"
+                  className="px-3 py-2.5 flex items-center justify-between gap-2"
                 >
                   <button
                     type="button"
@@ -531,9 +532,9 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                   <button
                     type="button"
                     onClick={() => applyOrigin(place, true)}
-                    className="text-[11px] font-semibold text-teal-700 hover:text-teal-800 whitespace-nowrap shrink-0 cursor-pointer"
+                    className="text-xs font-semibold text-teal-700 hover:text-teal-800 whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    Save default
+                    Save as home
                   </button>
                 </div>
               ))}
@@ -541,20 +542,19 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
           )}
 
           <p className="text-xs text-slate-500">
-            Active origin: <strong className="text-slate-800">{origin.label}</strong> (S
-            {origin.postalCode})
+            Starting from <strong className="text-slate-800">{origin.label}</strong>
           </p>
         </div>
 
-        <div className="lg:col-span-4 space-y-2">
-          <p className="text-xs font-semibold text-slate-700">Preferred Transport Mode</p>
-          <div className="grid grid-cols-3 gap-1.5">
+        <div className="lg:col-span-4 space-y-2.5">
+          <p className="text-xs font-semibold text-slate-700">How are you travelling?</p>
+          <div className="grid grid-cols-3 gap-2">
             {PLANNER_MODES.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 onClick={() => setTransportMode(m.id)}
-                className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-2.5 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${
+                className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-[44px] text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${
                   transportMode === m.id
                     ? 'bg-teal-700 border-teal-700 text-white'
                     : 'bg-[#FAFAF9] border-slate-200 text-slate-700 hover:border-slate-300'
@@ -565,21 +565,20 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-slate-500">
-            Queries OneMap routing for Public Transport, Walking, or Driving. Unavailable routes
-            never invent directions.
+          <p className="text-xs text-slate-500">
+            Select how you prefer to travel so we can estimate your departure time.
           </p>
         </div>
 
-        <div className="lg:col-span-3 space-y-2">
-          <p className="text-xs font-semibold text-slate-700">Arrival Buffer (Before Shift)</p>
-          <div className="grid grid-cols-3 gap-1.5">
+        <div className="lg:col-span-3 space-y-2.5">
+          <p className="text-xs font-semibold text-slate-700">Arrive early by</p>
+          <div className="grid grid-cols-3 gap-2">
             {([10, 15, 30] as const).map((buf) => (
               <button
                 key={buf}
                 type="button"
                 onClick={() => onChangeBufferMinutes(buf)}
-                className={`px-2.5 py-2.5 text-xs font-mono-tabular font-semibold rounded-lg border transition-colors cursor-pointer ${
+                className={`px-2.5 min-h-[44px] text-xs font-mono-tabular font-semibold rounded-lg border transition-colors cursor-pointer ${
                   arrivalBufferMinutes === buf
                     ? 'bg-slate-900 border-slate-900 text-white'
                     : 'bg-[#FAFAF9] border-slate-200 text-slate-700 hover:border-slate-300'
@@ -589,140 +588,117 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-slate-500">
-            Recommended arrival buffer added ahead of shift check-in time.
-          </p>
+          <p className="text-xs text-slate-500">Gives you time to settle in before the shift starts.</p>
         </div>
       </div>
 
       {plannerTab === 'single' && selectedOpp ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left: Activity Selection & Departure Calculation */}
+          {/* Left: Getting There Summary & Directions */}
           <div className="lg:col-span-5 space-y-5">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
               <div>
                 <label
                   htmlFor="route-mission-select"
                   className="block text-xs font-semibold text-slate-700 mb-1.5"
                 >
-                  Select Volunteering Activity
+                  Choose a mission
                 </label>
                 <select
                   id="route-mission-select"
                   value={selectedOpp.id}
                   onChange={(e) => setSelectedOppId(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs sm:text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full px-3 min-h-[44px] text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
                 >
                   {confirmedOpps.length > 0 && (
-                    <optgroup label="Confirmed / Upcoming Bookings">
+                    <optgroup label="Your Confirmed Missions">
                       {confirmedOpps.map((o) => (
                         <option key={o.id} value={o.id}>
-                          [Confirmed] {o.title} ({o.dateLabel}, {o.startTime24})
+                          {o.title} ({o.dateLabel})
                         </option>
                       ))}
                     </optgroup>
                   )}
-                  <optgroup label="All Singapore Shifts (Preview Journey)">
+                  <optgroup label="Other Upcoming Missions">
                     {opportunities
                       .filter((o) => !confirmedOpps.some((c) => c.id === o.id))
                       .map((o) => (
                         <option key={o.id} value={o.id}>
-                          {o.title} ({o.dateLabel}, {o.startTime24})
+                          {o.title} ({o.dateLabel})
                         </option>
                       ))}
                   </optgroup>
                 </select>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 space-y-2 text-xs">
-                <p className="font-semibold text-slate-900 text-sm">{selectedOpp.title}</p>
-                <p className="text-slate-600">
-                  {selectedOpp.charityName} · {selectedOpp.location} (S{selectedOpp.postalCode})
-                </p>
-                <p className="font-mono-tabular text-slate-700">
-                  Shift window: {selectedOpp.dateLabel} · {selectedOpp.timeLabel} SGT
-                </p>
-              </div>
-
-              {/* Journey Metrics & Suggested Departure */}
-              <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-700">Route Status</span>
-                  <span
-                    className={`font-semibold ${
-                      routeResult?.source === 'live' ? 'text-teal-700' : 'text-amber-700'
-                    }`}
-                  >
-                    {loadingRoute
-                      ? 'Calculating via OneMap...'
-                      : routeResult?.source === 'live'
-                      ? 'OneMap Live Route'
-                      : 'Live Route Unavailable'}
-                  </span>
+              {/* Getting There Overview */}
+              <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-5 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-display text-base font-bold text-slate-900">
+                    Getting there
+                  </h2>
+                  <span className="text-xs font-medium text-teal-700">{activeModeLabel}</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-200">
-                  <div>
-                    <p className="text-[11px] text-slate-500">Estimated Duration</p>
-                    <p className="font-mono-tabular text-xl font-bold text-slate-900 mt-0.5">
-                      {routeResult?.minutes !== null && routeResult?.minutes !== undefined
-                        ? `${routeResult.minutes} min`
-                        : 'Unavailable'}
-                    </p>
+                <dl className="space-y-2.5 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Location</dt>
+                    <dd className="font-medium text-slate-900 text-right">
+                      {selectedOpp.location} (S{selectedOpp.postalCode})
+                    </dd>
                   </div>
-                  <div>
-                    <p className="text-[11px] text-slate-500">Distance</p>
-                    <p className="font-mono-tabular text-xl font-bold text-slate-900 mt-0.5">
-                      {routeResult ? `${routeResult.distanceKm} km` : '—'}
-                    </p>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Estimated travel time</dt>
+                    <dd className="font-mono-tabular font-semibold text-slate-900 text-right">
+                      {loadingRoute
+                        ? 'Checking...'
+                        : routeResult?.minutes !== null && routeResult?.minutes !== undefined
+                        ? `${routeResult.minutes} min (${routeResult.distanceKm} km)`
+                        : `Unavailable (${routeResult?.distanceKm ?? '—'} km away)`}
+                    </dd>
                   </div>
-                </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Shift starts</dt>
+                    <dd className="font-mono-tabular font-medium text-slate-900 text-right">
+                      {selectedOpp.dateLabel} · {selectedOpp.startTime24}
+                    </dd>
+                  </div>
+                </dl>
 
                 <div className="pt-3 border-t border-slate-200">
-                  <p className="text-[11px] font-semibold text-teal-800">
-                    Suggested Departure Time (Asia/Singapore)
-                  </p>
+                  <p className="text-xs font-semibold text-teal-800">Suggested departure time</p>
                   {suggestedDeparture ? (
                     <div className="mt-1">
                       <p className="font-mono-tabular text-2xl font-bold text-teal-700">
-                        {suggestedDeparture.departureTime24} SGT{' '}
-                        <span className="text-sm font-medium text-slate-600">
-                          ({suggestedDeparture.departureTime12})
-                        </span>
+                        {suggestedDeparture.departureTime12}
                       </p>
                       <p className="text-xs text-slate-600 mt-1">
-                        Leave {origin.label} at {suggestedDeparture.departureTime24} to reach{' '}
-                        {selectedOpp.location} by{' '}
-                        <strong className="font-mono-tabular">
-                          {suggestedDeparture.targetArrivalTime24}
-                        </strong>{' '}
-                        ({arrivalBufferMinutes}-min buffer before {selectedOpp.startTime24} start).
+                        Leave {origin.label} around {suggestedDeparture.departureTime12} to arrive{' '}
+                        {arrivalBufferMinutes} minutes before your {selectedOpp.startTime24} start.
                       </p>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-600 mt-1">
-                      Suggested departure time requires live OneMap travel minutes. Plan to arrive
-                      by{' '}
+                      Live travel time isn&apos;t available right now. Plan to arrive around{' '}
                       <strong className="font-mono-tabular">
                         {calculateSuggestedDeparture(
                           selectedOpp.startTime24,
                           0,
                           arrivalBufferMinutes
-                        )?.targetArrivalTime24}{' '}
-                        SGT
+                        )?.targetArrivalTime12}
                       </strong>{' '}
-                      ({arrivalBufferMinutes}-min buffer before {selectedOpp.startTime24} start).
+                      ({arrivalBufferMinutes} minutes before the shift starts).
                     </p>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Step-by-Step Route Instructions */}
+            {/* Step-by-Step Route Directions */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-display text-base font-bold text-slate-900">
-                  Route Instructions
+                  Step-by-step route
                 </h3>
                 {routeResult?.transitSummary && (
                   <span className="font-mono-tabular text-xs text-teal-700 font-semibold">
@@ -732,24 +708,22 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               </div>
 
               {loadingRoute ? (
-                <p className="text-xs text-slate-500 py-2">
-                  Querying OneMap routing service for {transportMode.toUpperCase()}...
-                </p>
+                <p className="text-sm text-slate-500 py-2">Finding your route...</p>
               ) : routeResult && routeResult.instructions.length > 0 ? (
-                <ol className="space-y-2.5 text-xs">
+                <ol className="space-y-3 text-sm">
                   {routeResult.instructions.map((inst, idx) => (
                     <li
                       key={`${idx}-${inst.step}`}
                       className="flex items-start justify-between gap-3 py-1.5 border-b border-slate-100 last:border-b-0"
                     >
                       <div className="flex items-start gap-2.5 min-w-0">
-                        <span className="font-mono-tabular text-[11px] font-bold text-teal-700 mt-0.5 shrink-0">
+                        <span className="font-mono-tabular text-xs font-bold text-teal-700 mt-0.5 shrink-0">
                           {String(idx + 1).padStart(2, '0')}.
                         </span>
                         <span className="text-slate-800 leading-relaxed">{inst.step}</span>
                       </div>
                       {inst.distanceText && (
-                        <span className="font-mono-tabular text-[11px] text-slate-500 shrink-0">
+                        <span className="font-mono-tabular text-xs text-slate-500 shrink-0 mt-0.5">
                           {inst.distanceText}
                         </span>
                       )}
@@ -757,20 +731,19 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                   ))}
                 </ol>
               ) : (
-                <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-1.5">
+                <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 text-sm text-slate-600 space-y-1">
                   <p className="font-semibold text-slate-800">
-                    Turn-by-turn directions unavailable for this request
+                    Turn-by-turn directions aren&apos;t available for this route
                   </p>
-                  <p>
-                    {routeResult?.reason ??
-                      'OneMap did not return step-by-step instructions for this origin/destination pair. Straight-line distance is shown without fabricating transit times or street directions.'}
+                  <p className="text-xs">
+                    You can still check the destination pin on the map ({routeResult?.distanceKm ?? '—'} km away).
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Right: Interactive OneMap Route Map */}
+          {/* Right: Interactive OneMap View */}
           <div className="lg:col-span-7 space-y-4">
             <OneMapExplorer
               startingLocation={origin}
@@ -792,44 +765,42 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                   lng: selectedOpp.lng,
                 },
               ]}
-              title={`Journey Map: ${origin.label} → ${selectedOpp.location}`}
+              title={`${origin.label} → ${selectedOpp.location}`}
               subtitle={
-                routeResult?.source === 'live'
-                  ? `Showing OneMap ${transportMode.toUpperCase()} route (${routeResult.minutes} min · ${routeResult.distanceKm} km)`
-                  : `Showing origin and shift destination (${routeResult?.distanceKm ?? '—'} km straight-line)`
+                routeResult?.source === 'live' && routeResult.minutes !== null
+                  ? `Estimated ${routeResult.minutes} min by ${activeModeLabel.toLowerCase()} (${routeResult.distanceKm} km)`
+                  : `Showing route distance (${routeResult?.distanceKm ?? '—'} km)`
               }
             />
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3 text-sm">
               <span className="text-slate-600">
-                Want to check how this shift fits alongside your other volunteer commitments?
+                Want to see how this fits with your other upcoming commitments?
               </span>
               <button
                 type="button"
                 onClick={onOpenCalendar}
                 className="inline-flex items-center gap-1.5 font-semibold text-teal-700 hover:text-teal-800 cursor-pointer"
               >
-                <span>View in My Calendar</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <span>Open My Calendar</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
       ) : (
-        /* MULTI-MISSION SAME-DAY ROUTE PLANNER */
+        /* MULTI-MISSION SAME-DAY PLANNER */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-5 space-y-5">
             <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-display text-base font-bold text-slate-900">
-                    Same-Day Multi-Mission Planner
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Select 2 or more shifts on the same date to verify travel feasibility without
-                    altering your confirmed bookings.
-                  </p>
-                </div>
+              <div>
+                <h2 className="font-display text-base font-bold text-slate-900">
+                  Combine missions on the same day
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Pick 2 or more missions to check travel time between them. Nothing changes on your
+                  calendar until you register.
+                </p>
               </div>
 
               <div>
@@ -837,19 +808,19 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                   htmlFor="multi-date-select"
                   className="block text-xs font-semibold text-slate-700 mb-1.5"
                 >
-                  Select Date
+                  Choose a date
                 </label>
                 <select
                   id="multi-date-select"
                   value={multiDate}
                   onChange={(e) => setMultiDate(e.target.value)}
-                  className="w-full px-3 py-2 text-xs sm:text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg font-mono-tabular"
+                  className="w-full px-3 min-h-[42px] text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg font-mono-tabular"
                 >
                   {uniqueDates.map((date) => {
                     const count = opportunities.filter((o) => o.isoDate === date).length;
                     return (
                       <option key={date} value={date}>
-                        {date} ({count} shift{count === 1 ? '' : 's'})
+                        {date} ({count} mission{count === 1 ? '' : 's'})
                       </option>
                     );
                   })}
@@ -857,16 +828,14 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               </div>
 
               <div className="space-y-2 pt-2 border-t border-slate-100">
-                <p className="text-xs font-semibold text-slate-700">
-                  Shifts on {multiDate} (click to include/exclude)
-                </p>
+                <p className="text-xs font-semibold text-slate-700">Missions on {multiDate}</p>
                 {sameDayCandidates.map((opp) => {
                   const checked = multiSelectedIds.includes(opp.id);
                   const isConfirmed = confirmedOpps.some((c) => c.id === opp.id);
                   return (
                     <label
                       key={opp.id}
-                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                      className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-colors ${
                         checked
                           ? 'bg-teal-50/70 border-teal-600'
                           : 'bg-[#FAFAF9] border-slate-200 hover:border-slate-300'
@@ -876,17 +845,17 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleMultiStop(opp.id)}
-                        className="mt-0.5 accent-teal-700"
+                        className="mt-1 w-4 h-4 accent-teal-700"
                       />
-                      <div className="min-w-0 flex-1 text-xs">
+                      <div className="min-w-0 flex-1 text-xs sm:text-sm">
                         <p className="font-semibold text-slate-900">
                           {opp.title}{' '}
                           {isConfirmed && (
                             <span className="text-teal-700 font-medium">· Confirmed</span>
                           )}
                         </p>
-                        <p className="text-slate-600 mt-0.5 font-mono-tabular">
-                          {opp.timeLabel} · {opp.location} (S{opp.postalCode})
+                        <p className="text-slate-600 mt-0.5 text-xs font-mono-tabular">
+                          {opp.timeLabel} · {opp.location}
                         </p>
                       </div>
                     </label>
@@ -895,11 +864,10 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               </div>
             </div>
 
-            {/* Chronological Feasibility & Inter-Shift Travel Timeline */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-display text-base font-bold text-slate-900">
-                  Chronological Schedule &amp; Feasibility
+                  Day Schedule Check
                 </h3>
                 {multiSortedStops.length >= 2 && !loadingMulti && (
                   <span
@@ -907,17 +875,15 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                       hasMultiIssues ? 'text-amber-700' : 'text-teal-700'
                     }`}
                   >
-                    {hasMultiIssues ? 'Attention Needed' : 'Schedule Feasible'}
+                    {hasMultiIssues ? 'Tight timing' : 'Works well together'}
                   </span>
                 )}
               </div>
 
               {multiSortedStops.length === 0 ? (
-                <p className="text-xs text-slate-500">Select at least one shift above to plot.</p>
+                <p className="text-xs text-slate-500">Select at least one mission above.</p>
               ) : loadingMulti ? (
-                <p className="text-xs text-slate-500">
-                  Calculating OneMap travel times between consecutive locations...
-                </p>
+                <p className="text-xs text-slate-500">Checking travel time between stops...</p>
               ) : (
                 <div className="space-y-3">
                   {multiLegs.map((leg, idx) => (
@@ -937,27 +903,27 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                         </span>
                         <span className="font-mono-tabular text-slate-600">
                           {leg.route?.minutes !== null && leg.route?.minutes !== undefined
-                            ? `~${leg.route.minutes} min travel (${leg.route.distanceKm} km)`
-                            : `Travel time unavailable (${leg.route?.distanceKm ?? '—'} km)`}
+                            ? `~${leg.route.minutes} min travel`
+                            : `${leg.route?.distanceKm ?? '—'} km`}
                         </span>
                       </div>
-                      <p className="font-semibold text-slate-900">{leg.toOpportunity.title}</p>
+                      <p className="font-semibold text-slate-900 text-sm">
+                        {leg.toOpportunity.title}
+                      </p>
                       <p className="text-slate-600">
-                        From {leg.fromLabel} → {leg.toOpportunity.location} (S
-                        {leg.toOpportunity.postalCode})
+                        From {leg.fromLabel} → {leg.toOpportunity.location}
                       </p>
 
                       {leg.overlapWithPrev && (
                         <p className="inline-flex items-center gap-1.5 font-semibold text-red-700 pt-1">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                          Time overlap with previous shift. Choose non-overlapping hours.
+                          These two missions happen at the same time.
                         </p>
                       )}
                       {!leg.overlapWithPrev && leg.tightTransition && (
                         <p className="inline-flex items-center gap-1.5 font-semibold text-amber-800 pt-1">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                          Only {leg.gapMinutesFromPrev} min between shifts—insufficient transit
-                          buffer.
+                          Only {leg.gapMinutesFromPrev} min between missions—may feel rushed.
                         </p>
                       )}
                       {!leg.overlapWithPrev &&
@@ -965,21 +931,12 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                         leg.gapMinutesFromPrev !== null && (
                           <p className="inline-flex items-center gap-1.5 font-semibold text-teal-700 pt-1">
                             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                            {leg.gapMinutesFromPrev} min transition gap — feasible between stops.
+                            {leg.gapMinutesFromPrev} min gap — plenty of time to travel.
                           </p>
                         )}
                     </div>
                   ))}
                 </div>
-              )}
-
-              {multiSortedStops.length >= 2 && !loadingMulti && (
-                <p className="text-[11px] text-slate-500 pt-1">
-                  Recommendation:{' '}
-                  {hasMultiIssues
-                    ? 'Uncheck the overlapping or tight-gap shift above to maintain a safe Singapore transit buffer. Confirmed commitments are never automatically modified.'
-                    : 'Your selected shifts run in sequence with comfortable travel time between venues.'}
-                </p>
               )}
             </div>
           </div>
@@ -991,11 +948,9 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
               travelTimes={travelTimes}
               selectedOppId={multiSortedStops[0]?.id ?? null}
               onSelectOpportunity={(id) => setSelectedOppId(id)}
-              routePolylines={
-                multiLegs
-                  .map((l) => l.route?.polyline ?? [])
-                  .filter((line) => line.length >= 2)
-              }
+              routePolylines={multiLegs
+                .map((l) => l.route?.polyline ?? [])
+                .filter((line) => line.length >= 2)}
               routeStops={multiSortedStops.map((stop, idx) => ({
                 order: idx + 1,
                 label: stop.title,
@@ -1003,8 +958,8 @@ export const RoutePlannerView: React.FC<RoutePlannerViewProps> = ({
                 lat: stop.lat,
                 lng: stop.lng,
               }))}
-              title={`Multi-Mission Route Map (${multiDate})`}
-              subtitle="Numbered pins show chronological mission sequence from your starting location"
+              title={`Day Route (${multiDate})`}
+              subtitle="Numbered pins show your route order from your starting location"
             />
           </div>
         </div>

@@ -5,9 +5,12 @@ import {
   Copy,
   Download,
   FileSpreadsheet,
+  MailPlus,
   Plus,
+  ShieldCheck,
   X,
 } from 'lucide-react';
+import { INITIAL_CHARITIES } from '../data/mockData';
 import {
   CauseCategory,
   CorporateCampaign,
@@ -42,6 +45,8 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
   const [selectedCorpId, setSelectedCorpId] = useState<string>(corporates[0]?.id ?? 'corp-01');
   const [showCampaignForm, setShowCampaignForm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [inviteCampaign, setInviteCampaign] = useState<CorporateCampaign | null>(null);
+  const [inviteEmails, setInviteEmails] = useState('');
   const [deptSearch, setDeptSearch] = useState('');
 
   // New campaign state
@@ -228,17 +233,17 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
             {activeCorp.name}
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Organise corporate volunteering activities, distinguish completed impact from planned
-            events, and export participation summaries.
+            Find trusted charity partners, organise team volunteering events, invite employees, and
+            generate impact reports.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <select
             value={activeCorp.id}
             onChange={(e) => setSelectedCorpId(e.target.value)}
             aria-label="Switch corporate organisation"
-            className="px-3.5 py-2.5 text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+            className="px-3.5 min-h-[42px] text-sm bg-[#FAFAF9] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
           >
             {corporates.map((c) => (
               <option key={c.id} value={c.id}>
@@ -248,19 +253,34 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
           </select>
           <button
             type="button"
+            onClick={() => {
+              const target = upcomingCampaigns[0];
+              if (target) {
+                setInviteCampaign(target);
+              } else {
+                setShowCampaignForm(true);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs sm:text-sm font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg whitespace-nowrap cursor-pointer"
+          >
+            <MailPlus className="w-4 h-4 text-teal-700" />
+            <span>Invite Employees</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowCampaignForm((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs sm:text-sm font-semibold text-slate-800 bg-[#FAFAF9] border border-slate-300 hover:bg-slate-100 rounded-lg whitespace-nowrap cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>{showCampaignForm ? 'Close Form' : 'Plan CSR Event'}</span>
+            <span>{showCampaignForm ? 'Close Form' : 'Organise Event'}</span>
           </button>
           <button
             type="button"
             onClick={() => setShowReportModal(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs sm:text-sm font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg whitespace-nowrap cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span>Export Impact Summary</span>
+            <span>Generate Impact Report</span>
           </button>
         </div>
       </div>
@@ -385,17 +405,24 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
         </form>
       )}
 
-      {/* KPI Strip: Clearly Separating Completed Impact vs Planned Activities */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Strip: Upcoming Events, Registrations, Participation, Completed Hours & Partners */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Completed Volunteering Hours</p>
+          <p className="text-xs text-slate-500">Upcoming Events</p>
           <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">
-            {completedHours.toLocaleString()} hrs
+            {upcomingCampaigns.length}
           </p>
-          <p className="text-xs text-teal-700 mt-1">Completed impact log</p>
+          <p className="text-xs text-amber-700 mt-1">Open for employee sign-up</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Employee Participation Rate</p>
+          <p className="text-xs text-slate-500">Employee Registrations</p>
+          <p className="font-mono-tabular text-2xl font-bold text-amber-700 mt-1">
+            {upcomingRegistrations}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">Confirmed for upcoming events</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <p className="text-xs text-slate-500">Participation Rate</p>
           <p className="font-mono-tabular text-2xl font-bold text-teal-700 mt-1">
             {participationRate}%
           </p>
@@ -404,16 +431,14 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
           </p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Upcoming Planned Registrations</p>
-          <p className="font-mono-tabular text-2xl font-bold text-amber-700 mt-1">
-            {upcomingRegistrations} staff
+          <p className="text-xs text-slate-500">Completed Hours</p>
+          <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">
+            {completedHours.toLocaleString()} hrs
           </p>
-          <p className="text-xs text-slate-500 mt-1">
-            Across {upcomingCampaigns.length} planned event(s)
-          </p>
+          <p className="text-xs text-teal-700 mt-1">Verified attendance log</p>
         </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5">
-          <p className="text-xs text-slate-500">Active Charity Partners</p>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 col-span-2 lg:col-span-1">
+          <p className="text-xs text-slate-500">Charity Partners</p>
           <p className="font-mono-tabular text-2xl font-bold text-slate-900 mt-1">
             {charityPartners.length}
           </p>
@@ -528,15 +553,25 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <span className="font-mono-tabular text-xs text-slate-600 shrink-0">
-                      {camp.registeredParticipants}/{camp.targetParticipants} registered
-                    </span>
+                      <span className="font-mono-tabular text-xs text-slate-600 shrink-0">
+                        {camp.registeredParticipants}/{camp.targetParticipants} registered
+                      </span>
+                    </div>
+                    <div className="mt-2.5 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setInviteCampaign(camp)}
+                        className="inline-flex items-center gap-1.5 px-3 min-h-[36px] text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg cursor-pointer"
+                      >
+                        <MailPlus className="w-3.5 h-3.5" />
+                        <span>Invite Employees</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -625,6 +660,147 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
         </div>
       </div>
 
+      {/* Charity Partners Directory */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div>
+            <h2 className="font-display text-base font-bold text-slate-900">
+              Charity Partners Directory
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Select a Singapore community partner to organise an employee volunteering event.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {INITIAL_CHARITIES.map((ch) => (
+            <div
+              key={ch.id}
+              className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 flex flex-col justify-between gap-3"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold text-teal-700">{ch.primaryCause}</span>
+                  <span className="inline-flex items-center gap-1 text-slate-600">
+                    <ShieldCheck className="w-3.5 h-3.5 text-teal-700" />
+                    <span>{ch.verificationStatus === 'Authoritatively Verified' ? 'Verified' : ch.verificationStatus}</span>
+                  </span>
+                </div>
+                <p className="font-display text-sm font-bold text-slate-900 mt-1">{ch.name}</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {ch.district} · UEN {ch.uen}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCharityName(ch.name);
+                  setCause(ch.primaryCause);
+                  setShowCampaignForm(true);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="w-full px-3 min-h-[38px] text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+              >
+                Organise Event with Partner
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Invite Employees Modal */}
+      {inviteCampaign && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="invite-modal-title"
+        >
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <p className="text-xs font-semibold text-teal-700">Invite Team Members</p>
+                <h2 id="invite-modal-title" className="font-display text-lg font-bold text-slate-900 mt-0.5">
+                  {inviteCampaign.title}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {inviteCampaign.charityName} · {inviteCampaign.dateLabel} ·{' '}
+                  {inviteCampaign.departmentScope}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInviteCampaign(null)}
+                aria-label="Close invite modal"
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label htmlFor="invite-emails" className="block font-semibold text-slate-700 mb-1">
+                  Employee Work Emails (comma-separated)
+                </label>
+                <input
+                  id="invite-emails"
+                  type="text"
+                  value={inviteEmails}
+                  onChange={(e) => setInviteEmails(e.target.value)}
+                  placeholder="e.g. team@company.sg, ops@company.sg"
+                  className="w-full px-3 min-h-[42px] text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+              </div>
+              <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-3.5 text-slate-700 space-y-1">
+                <p className="font-semibold text-slate-900">Ready-to-share message</p>
+                <p className="leading-relaxed">
+                  Join {activeCorp.name} for &ldquo;{inviteCampaign.title}&rdquo; with{' '}
+                  {inviteCampaign.charityName} on {inviteCampaign.dateLabel}. Target:{' '}
+                  {inviteCampaign.targetParticipants} colleagues ({inviteCampaign.departmentScope}).
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  const text = `Join ${activeCorp.name} for "${inviteCampaign.title}" with ${inviteCampaign.charityName} on ${inviteCampaign.dateLabel}.`;
+                  try {
+                    await navigator.clipboard.writeText(text);
+                  } catch {
+                    // Clipboard fallback
+                  }
+                  onNotify('Invitation link & message copied', 'Ready to paste into Slack, Teams, or email.');
+                }}
+                className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy Message</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onNotify(
+                    `Invitations prepared for ${inviteCampaign.title}`,
+                    inviteEmails.trim()
+                      ? `Prepared email invites for ${inviteEmails.trim()}.`
+                      : `Prepared department invitation for ${inviteCampaign.departmentScope}.`
+                  );
+                  setInviteEmails('');
+                  setInviteCampaign(null);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+              >
+                <MailPlus className="w-3.5 h-3.5" />
+                <span>Send Team Invites</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Exportable Impact Summary Modal */}
       {showReportModal && (
         <div
@@ -637,7 +813,7 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
             <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200">
               <div>
                 <p className="text-xs font-semibold text-teal-700">
-                  MissionPossible Exportable CSR Impact Summary
+                  MissionPossible CSR Impact Report
                 </p>
                 <h2 id="csr-report-title" className="font-display text-xl font-bold text-slate-900 mt-1">
                   {activeCorp.name}
@@ -667,7 +843,7 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Planned Registrations</p>
+                <p className="text-xs text-slate-500">Upcoming Sign-ups</p>
                 <p className="font-mono-tabular text-xl font-bold text-amber-700 mt-0.5">
                   {upcomingRegistrations}
                 </p>
@@ -675,11 +851,11 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
             </div>
 
             <div className="mt-5 space-y-2 text-sm text-slate-600">
-              <p className="font-semibold text-slate-900">Record Scope &amp; Separation</p>
+              <p className="font-semibold text-slate-900">Report Summary</p>
               <p className="leading-relaxed">
-                This summary strictly separates {completedHours.toLocaleString()} completed
-                volunteering hours from {upcomingRegistrations} planned upcoming employee
-                registrations across {charityPartners.length} partner charities.
+                This report tracks {completedHours.toLocaleString()} completed employee volunteering
+                hours separately from {upcomingRegistrations} upcoming event registrations across{' '}
+                {charityPartners.length} partner charities.
               </p>
               <div className="pt-2 flex items-center gap-2 text-xs text-teal-700 font-medium">
                 <CheckCircle2 className="w-4 h-4" />
@@ -691,7 +867,7 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
               <button
                 type="button"
                 onClick={handleCopySummary}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5" />
                 <span>Copy Summary</span>
@@ -699,10 +875,10 @@ export const CorporateDashboard: React.FC<CorporateDashboardProps> = ({
               <button
                 type="button"
                 onClick={handleDownloadCsv}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download CSV Summary</span>
+                <span>Download CSV Report</span>
               </button>
             </div>
           </div>

@@ -55,9 +55,9 @@ export const VOLUNTEER_JOURNEY_STAGES: DemoStageInfo[] = [
     stepTag: 'Remind',
     title: 'Step 5 (Remind) — WhatsApp Opt-In & Simulated Reminder',
     summary:
-      'Set 24h & 1h reminder preferences, preview the simulated WhatsApp card, and click Simulate Reminder.',
+      'Set 24h & 1h reminder preferences inside Profile, preview the simulated WhatsApp card, and click Send Preview Reminder.',
     targetPage: 'volunteers',
-    targetSubTab: 'notifications',
+    targetSubTab: 'profile',
   },
   {
     stage: 6,

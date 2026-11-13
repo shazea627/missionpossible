@@ -556,6 +556,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: false,
     corporateFriendly: true,
+    commitmentType: 'Recurring',
     description:
       'Sort, pack, and distribute weekly dry rations and fresh produce bundles to Eunos senior households.',
   },
@@ -585,6 +586,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: false,
     corporateFriendly: true,
+    commitmentType: 'Recurring',
     description:
       'Pack weekend nutrition kits and deliver them to Bedok rental-flat residents with mobility needs.',
   },
@@ -614,6 +616,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: true,
     corporateFriendly: true,
+    commitmentType: 'One-time',
     description:
       'Outdoor shoreline cleanup along East Coast Park; weigh and categorise marine plastics for coastal audit.',
   },
@@ -643,6 +646,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Urgent Fill',
     isOutdoor: false,
     corporateFriendly: false,
+    commitmentType: 'Recurring',
     description:
       'Host afternoon board games, tea conversations, and simple phone-navigation support for seniors.',
   },
@@ -672,6 +676,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: false,
     corporateFriendly: true,
+    commitmentType: 'Recurring',
     description:
       'Collect unsold fresh bread and produce from Tampines retailers and redistribute to evening families.',
   },
@@ -701,6 +706,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: false,
     corporateFriendly: true,
+    commitmentType: 'Recurring',
     description:
       'One-on-one literacy and primary maths coaching for students from lower-income Bishan households.',
   },
@@ -730,6 +736,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: true,
     corporateFriendly: false,
+    commitmentType: 'Recurring',
     description:
       'Outdoor kennel cleaning, feeding prep, and morning walks for rescued community dogs.',
   },
@@ -759,6 +766,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: true,
     corporateFriendly: true,
+    commitmentType: 'One-time',
     description:
       'Outdoor composting, bed mulching, and fresh greens harvest donated directly to Chinatown elder centres.',
   },
@@ -788,6 +796,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Urgent Fill',
     isOutdoor: false,
     corporateFriendly: true,
+    commitmentType: 'One-time',
     description:
       'Public holiday meal packing and warm festive hampers for homebound seniors in Eunos and Bedok.',
   },
@@ -817,6 +826,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: true,
     corporateFriendly: true,
+    commitmentType: 'One-time',
     description:
       'Outdoor long-weekend shoreline cleanup clearing post-celebration litter along East Coast Park.',
   },
@@ -846,6 +856,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: true,
     corporateFriendly: false,
+    commitmentType: 'One-time',
     description:
       'Public holiday gentle morning walk and festive check-in with Chinatown senior residents.',
   },
@@ -875,6 +886,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: true,
     corporateFriendly: true,
+    commitmentType: 'One-time',
     description:
       'Outdoor raised-bed planting and community compost workshop for Bedok neighbourhood families.',
   },
@@ -904,6 +916,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: false,
     corporateFriendly: true,
+    commitmentType: 'Recurring',
     description:
       'Morning meal prep and dry ration sorting in Eunos, scheduled cleanly before afternoon Bedok delivery shifts.',
   },
@@ -933,6 +946,7 @@ export const INITIAL_OPPORTUNITIES: Opportunity[] = [
     urgency: 'Normal',
     isOutdoor: false,
     corporateFriendly: false,
+    commitmentType: 'Recurring',
     description:
       'Help Tampines seniors navigate HealthHub, Singpass, and digital clinic appointments.',
   },

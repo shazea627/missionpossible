@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
-  BellRing,
+  Bell,
   Calendar,
   CheckCircle2,
+  Clock,
   MessageSquare,
   Navigation,
-  ShieldCheck,
 } from 'lucide-react';
 import {
   NotificationLogEntry,
@@ -67,7 +67,7 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
   const [selectedOppId, setSelectedOppId] = useState<string>(
     () => selectableOpps[0]?.id ?? 'opp-02'
   );
-  const [selectedOffset, setSelectedOffset] = useState<ReminderOffset>('1h');
+  const [selectedOffset, setSelectedOffset] = useState<ReminderOffset>('24h');
 
   const previewOpp =
     opportunities.find((o) => o.id === selectedOppId) ?? selectableOpps[0];
@@ -109,72 +109,24 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold text-teal-700">
-            Reminder Preferences &amp; Simulated WhatsApp Experience
-          </p>
-          <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900 mt-0.5">
-            Notification Settings
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Configure shift reminder timing, departure buffer alerts, and preview simulated
-            WhatsApp messages with one-click attendance confirmation.
-          </p>
-        </div>
-
-        <div className="text-xs text-slate-600 bg-[#FAFAF9] border border-slate-200 rounded-xl px-4 py-2.5 shrink-0">
-          <p className="font-semibold text-slate-900">WhatsApp Business API: Not Connected</p>
-          <p className="text-[11px] text-slate-500">
-            In-app simulation active · Zero external messages sent · Fictional demo contact only
-          </p>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left: Opt-in Preferences & Timing Controls */}
+        {/* Left: Reminder Channels & Timing Controls */}
         <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-          <h3 className="font-display text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
-            Channel Opt-In &amp; Alert Preferences
-          </h3>
-
-          {/* Demo Contact (No real phone collection) */}
-          <div className="bg-[#FAFAF9] border border-slate-200 rounded-xl p-4 space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-800">Notification Recipient Profile</span>
-              <span className="font-mono-tabular text-teal-700 font-semibold">Demo Profile</span>
-            </div>
-            <p className="text-slate-600">{preferences.demoContactLabel}</p>
-            <p className="text-[11px] text-slate-500">
-              No real phone number is collected or stored in this demo.
+          <div>
+            <h3 className="font-display text-lg font-bold text-slate-900">
+              Reminders &amp; Notifications
+            </h3>
+            <p className="text-sm text-slate-600 mt-1">
+              Choose how and when you&apos;d like to be reminded about your upcoming missions.
             </p>
           </div>
 
-          {/* Channels */}
-          <div className="space-y-3 text-xs sm:text-sm">
-            <label className="flex items-start justify-between gap-4 p-3.5 rounded-xl border border-slate-200 cursor-pointer">
+          <div className="space-y-3 text-sm">
+            <label className="flex items-start justify-between gap-4 p-4 rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300">
               <div>
-                <p className="font-semibold text-slate-900">WhatsApp Shift Reminders (Simulated)</p>
+                <p className="font-semibold text-slate-900">In-app reminders</p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Preview upcoming mission details, travel duration, and departure time alerts.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={preferences.whatsappEnabled}
-                onChange={(e) =>
-                  onUpdatePreferences({ ...preferences, whatsappEnabled: e.target.checked })
-                }
-                className="w-4 h-4 mt-1 accent-teal-700"
-              />
-            </label>
-
-            <label className="flex items-start justify-between gap-4 p-3.5 rounded-xl border border-slate-200 cursor-pointer">
-              <div>
-                <p className="font-semibold text-slate-900">In-App Notifications</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Show toast banners and notification log entries inside MissionPossible.
+                  Show helpful confirmation banners and reminders while using MissionPossible.
                 </p>
               </div>
               <input
@@ -183,11 +135,31 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                 onChange={(e) =>
                   onUpdatePreferences({ ...preferences, inAppEnabled: e.target.checked })
                 }
-                className="w-4 h-4 mt-1 accent-teal-700"
+                className="w-5 h-5 mt-0.5 accent-teal-700"
               />
             </label>
 
-            <label className="flex items-start gap-2.5 p-3.5 rounded-xl bg-teal-50/60 border border-teal-200 text-xs text-slate-800 cursor-pointer">
+            <label className="flex items-start justify-between gap-4 p-4 rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300">
+              <div>
+                <p className="font-semibold text-slate-900">
+                  WhatsApp reminders (Preview only)
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Future integration. You can preview how reminders will look below—no real
+                  WhatsApp messages are sent.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={preferences.whatsappEnabled}
+                onChange={(e) =>
+                  onUpdatePreferences({ ...preferences, whatsappEnabled: e.target.checked })
+                }
+                className="w-5 h-5 mt-0.5 accent-teal-700"
+              />
+            </label>
+
+            <label className="flex items-start gap-3 p-4 rounded-xl bg-[#FAFAF9] border border-slate-200 text-xs sm:text-sm text-slate-700 cursor-pointer">
               <input
                 type="checkbox"
                 checked={preferences.consentAccepted}
@@ -197,16 +169,15 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                 className="w-4 h-4 mt-0.5 accent-teal-700 shrink-0"
               />
               <span>
-                <strong>Opt-in Consent:</strong> I consent to receive shift reminders, departure
-                buffers, and cancellation notices for shifts I register for (simulated preview in
-                demo mode).
+                I&apos;d like to receive reminders, departure alerts, and schedule updates for
+                missions I sign up for.
               </span>
             </label>
           </div>
 
           {/* Reminder Timing */}
-          <div className="space-y-2 pt-2 border-t border-slate-100">
-            <p className="text-xs font-semibold text-slate-700">Shift Reminder Timing</p>
+          <div className="space-y-2.5 pt-2 border-t border-slate-100">
+            <p className="text-xs font-semibold text-slate-700">When should we remind you?</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {(['24h', '3h', '1h'] as ReminderOffset[]).map((offset) => {
                 const active = preferences.reminderOffsets.includes(offset);
@@ -215,10 +186,11 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                     key={offset}
                     type="button"
                     onClick={() => toggleOffset(offset)}
-                    className={`px-3 py-2 text-xs font-semibold rounded-lg border text-left cursor-pointer ${
+                    aria-pressed={active}
+                    className={`px-3 min-h-[42px] text-xs font-semibold rounded-lg border text-left cursor-pointer transition-colors ${
                       active
                         ? 'bg-teal-50 border-teal-600 text-teal-900'
-                        : 'bg-[#FAFAF9] border-slate-200 text-slate-600'
+                        : 'bg-[#FAFAF9] border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                   >
                     {REMINDER_OFFSET_LABELS[offset]}
@@ -228,10 +200,10 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
             </div>
           </div>
 
-          {/* Departure & Alert Toggles */}
-          <div className="space-y-2.5 pt-2 border-t border-slate-100 text-xs">
+          {/* Journey Departure & Shift Update Toggles */}
+          <div className="space-y-3 pt-2 border-t border-slate-100 text-xs sm:text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="inline-flex items-center gap-2 font-semibold text-slate-800 cursor-pointer">
+              <label className="inline-flex items-center gap-2.5 font-semibold text-slate-800 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={preferences.departureRemindersEnabled}
@@ -243,7 +215,7 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                   }
                   className="w-4 h-4 accent-teal-700"
                 />
-                <span>Journey Departure Reminders</span>
+                <span>Journey departure reminder</span>
               </label>
 
               <select
@@ -254,16 +226,16 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                     departureBufferMinutes: Number(e.target.value) as 10 | 15 | 30,
                   })
                 }
-                aria-label="Departure reminder arrival buffer"
-                className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-mono-tabular"
+                aria-label="Arrival buffer before mission start"
+                className="px-3 min-h-[40px] text-xs bg-white border border-slate-300 rounded-lg font-mono-tabular"
               >
-                <option value={10}>10 min arrival buffer</option>
-                <option value={15}>15 min arrival buffer</option>
-                <option value={30}>30 min arrival buffer</option>
+                <option value={10}>Arrive 10 min early</option>
+                <option value={15}>Arrive 15 min early</option>
+                <option value={30}>Arrive 30 min early</option>
               </select>
             </div>
 
-            <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
+            <label className="flex items-center gap-2.5 text-slate-700 cursor-pointer">
               <input
                 type="checkbox"
                 checked={preferences.lastMinuteAlertsEnabled}
@@ -275,48 +247,34 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                 }
                 className="w-4 h-4 accent-teal-700"
               />
-              <span>Last-minute Rescue a Shift opportunity alerts</span>
-            </label>
-
-            <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={preferences.cancellationAlertsEnabled}
-                onChange={(e) =>
-                  onUpdatePreferences({
-                    ...preferences,
-                    cancellationAlertsEnabled: e.target.checked,
-                  })
-                }
-                className="w-4 h-4 accent-teal-700"
-              />
-              <span>Shift schedule updates &amp; cancellation alerts</span>
+              <span>Notify me when nearby charities urgently need a replacement</span>
             </label>
           </div>
         </div>
 
-        {/* Right: WhatsApp Reminder Preview + Simulate Reminder */}
+        {/* Right: Clearly Labelled Simulated WhatsApp Preview */}
         <div className="lg:col-span-6 space-y-5">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-display text-base font-bold text-slate-900">
-                  WhatsApp Reminder Preview (Simulated)
+                  WhatsApp Reminder Preview (Simulation)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Select an upcoming mission to preview the reminder message and test interactive
-                  actions.
+                  Preview only — WhatsApp messaging is not connected yet.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={handleTriggerSimulation}
-                disabled={!preferences.whatsappEnabled || !preferences.consentAccepted || !previewPayload}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-40 rounded-lg whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                disabled={
+                  !preferences.whatsappEnabled || !preferences.consentAccepted || !previewPayload
+                }
+                className="inline-flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-40 rounded-lg whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                <span>Simulate Reminder</span>
+                <span>Preview Reminder</span>
               </button>
             </div>
 
@@ -326,13 +284,13 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                   htmlFor="sim-opp-select"
                   className="block text-xs font-semibold text-slate-700 mb-1"
                 >
-                  Mission to Preview
+                  Mission
                 </label>
                 <select
                   id="sim-opp-select"
                   value={previewOpp?.id ?? ''}
                   onChange={(e) => setSelectedOppId(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg"
+                  className="w-full px-3 min-h-[42px] text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg"
                 >
                   {selectableOpps.map((o) => (
                     <option key={o.id} value={o.id}>
@@ -346,13 +304,13 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                   htmlFor="sim-offset-select"
                   className="block text-xs font-semibold text-slate-700 mb-1"
                 >
-                  Reminder Trigger Window
+                  Timing
                 </label>
                 <select
                   id="sim-offset-select"
                   value={selectedOffset}
                   onChange={(e) => setSelectedOffset(e.target.value as ReminderOffset)}
-                  className="w-full px-3 py-2 text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg"
+                  className="w-full px-3 min-h-[42px] text-xs bg-[#FAFAF9] border border-slate-300 rounded-lg"
                 >
                   {(['24h', '3h', '1h'] as ReminderOffset[]).map((off) => (
                     <option key={off} value={off}>
@@ -367,9 +325,9 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
               <div className="bg-[#EFEAE2] border border-slate-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between text-[11px] text-slate-600">
                   <span className="font-semibold text-slate-800">
-                    Simulated WhatsApp Message Preview
+                    Simulated WhatsApp Card
                   </span>
-                  <span className="font-mono-tabular">Simulated · No Real SMS/WA Sent</span>
+                  <span className="font-mono-tabular">Preview Only</span>
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-1.5 text-xs text-slate-800">
@@ -384,7 +342,7 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                   <button
                     type="button"
                     onClick={() => onViewMission(previewPayload.opportunity.id)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
                   >
                     <Calendar className="w-3.5 h-3.5 text-teal-700" />
                     <span>View My Mission</span>
@@ -392,7 +350,7 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                   <button
                     type="button"
                     onClick={() => onPlanJourney(previewPayload.opportunity.id)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
                   >
                     <Navigation className="w-3.5 h-3.5 text-teal-700" />
                     <span>Plan My Journey</span>
@@ -401,7 +359,7 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
                     type="button"
                     onClick={() => onConfirmAttendance(previewPayload.opportunity.id)}
                     disabled={Boolean(previewBooking?.attendanceConfirmed)}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-semibold rounded-lg cursor-pointer ${
                       previewBooking?.attendanceConfirmed
                         ? 'bg-teal-100 text-teal-900 cursor-default'
                         : 'bg-teal-700 text-white hover:bg-teal-800'
@@ -419,38 +377,35 @@ export const NotificationSettingsView: React.FC<NotificationSettingsViewProps> =
             )}
           </div>
 
-          {/* Simulated Notification Delivery Log */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-display text-base font-bold text-slate-900 flex items-center gap-2">
-                <BellRing className="w-4 h-4 text-teal-700" />
-                <span>Simulated Notification Log ({notificationLog.length})</span>
-              </h3>
-              <span className="text-[11px] text-slate-500">Local Demo History</span>
-            </div>
+          {/* Recent Activity & Reminder History */}
+          {notificationLog.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-display text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-teal-700" />
+                  <span>Recent Notifications ({notificationLog.length})</span>
+                </h3>
+                <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                  <Clock className="w-3.5 h-3.5" />
+                  History
+                </span>
+              </div>
 
-            {notificationLog.length === 0 ? (
-              <p className="text-xs text-slate-500 py-2">
-                No simulated notifications logged yet. Click <strong>Simulate Reminder</strong> or
-                register/cancel a shift to populate the delivery log.
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+              <div className="divide-y divide-slate-100 max-h-52 overflow-y-auto">
                 {notificationLog.map((entry) => (
                   <div key={entry.id} className="py-2.5 text-xs">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-slate-900">{entry.title}</span>
                       <span className="font-mono-tabular text-[11px] text-teal-700 shrink-0">
-                        {entry.status} · {entry.timestampSg}
+                        {entry.timestampSg}
                       </span>
                     </div>
                     <p className="text-slate-600 mt-0.5">{entry.summary}</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">{entry.channel}</p>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

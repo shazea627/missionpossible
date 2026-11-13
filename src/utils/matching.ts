@@ -54,19 +54,19 @@ export function calculateMatchScore(
   if (availabilityMatch) {
     score += 35;
     if (holidayMatch && matchingHoliday) {
-      reasons.push(`Public holiday match (${matchingHoliday.holiday})`);
+      reasons.push(`Fits your ${matchingHoliday.holiday} holiday availability`);
     } else {
-      reasons.push(`Fits ${SLOT_LABELS[opportunity.slot]}`);
+      reasons.push(`Fits your ${SLOT_LABELS[opportunity.slot].toLowerCase()} availability`);
     }
   }
 
   if (travelMinutes !== null) {
     if (travelMinutes <= 15) {
       score += 25;
-      reasons.push(`${travelMinutes} min via OneMap routing`);
+      reasons.push(`${travelMinutes} minutes from your preferred location`);
     } else if (travelMinutes <= volunteer.maxTravelMinutes) {
       score += 19;
-      reasons.push(`${travelMinutes} min (within ${volunteer.maxTravelMinutes} min limit)`);
+      reasons.push(`${travelMinutes} minutes away (within your ${volunteer.maxTravelMinutes}-min limit)`);
     } else if (travelMinutes <= volunteer.maxTravelMinutes + 15) {
       score += 9;
     } else {
@@ -78,7 +78,7 @@ export function calculateMatchScore(
       reasons.push(`${distanceKm} km from ${volunteer.startingLocation.label}`);
     } else if (distanceKm <= 7.5) {
       score += 17;
-      reasons.push(`${distanceKm} km away (${opportunity.district})`);
+      reasons.push(`${distanceKm} km away in ${opportunity.district}`);
     } else if (distanceKm <= 12) {
       score += 10;
     } else {
@@ -86,23 +86,23 @@ export function calculateMatchScore(
     }
   } else if (districtMatch) {
     score += 18;
-    reasons.push(`Same district (${opportunity.district})`);
+    reasons.push(`Near your ${opportunity.district} neighbourhood`);
   }
 
   if (opportunity.requiredSkills.length === 0) {
     score += 20;
-    reasons.push('Open to all skill levels');
+    reasons.push('No prior experience needed');
   } else {
     const skillRatio = matchedSkills.length / opportunity.requiredSkills.length;
     score += Math.round(20 * skillRatio);
     if (matchedSkills.length > 0) {
-      reasons.push(`Skills: ${matchedSkills.join(', ')}`);
+      reasons.push(`Uses your ${matchedSkills.join(' & ')} skills`);
     }
   }
 
   if (causeMatch) {
     score += 15;
-    reasons.push(`Cause interest: ${opportunity.cause}`);
+    reasons.push(`Matches your interest in ${opportunity.cause.toLowerCase()}`);
   }
 
   if (districtMatch) {
