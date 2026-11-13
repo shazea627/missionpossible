@@ -1,0 +1,6 @@
+{
+  "name": "MissionPossible",
+  "description": "The right volunteer. The right cause. The right time. Shared digital infrastructure connecting volunteers, charities, and corporate CSR programmes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
